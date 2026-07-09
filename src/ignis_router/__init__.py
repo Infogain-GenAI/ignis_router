@@ -7,7 +7,16 @@ Supports intent detection, complexity assessment, and rule-based routing.
 
 from .config import RouterConfig, RouterRegistry
 from .config_framework import RoutingYamlConfig, load_routing_yaml
-from .api import ErrorResponse, RouteRequest, RouteResponse, create_app
+from .api import ChatRequest, ChatResponse, ErrorResponse, RouteRequest, RouteResponse, create_app
+from .client import ChatResult, IgnisClient, RouteResult
+from .llm_client import (
+    AnthropicClient,
+    BaseLLMClient,
+    GeminiClient,
+    LLMClientRegistry,
+    LLMResponse,
+    OpenAIClient,
+)
 from .exceptions import (
     ConfigurationError,
     IgnisRouterError,
@@ -44,6 +53,17 @@ __all__ = [
     "Router",
     "RoutingEngine",
     "create_app",
+    # SDK Client
+    "IgnisClient",
+    "RouteResult",
+    "ChatResult",
+    # LLM Clients
+    "BaseLLMClient",
+    "OpenAIClient",
+    "AnthropicClient",
+    "GeminiClient",
+    "LLMClientRegistry",
+    "LLMResponse",
     # Configuration
     "RouterConfig",
     "RouterRegistry",
@@ -59,6 +79,8 @@ __all__ = [
     "TaskComplexity",
     "RouteRequest",
     "RouteResponse",
+    "ChatRequest",
+    "ChatResponse",
     "ErrorResponse",
     # Components
     "BaseIntentDetector",

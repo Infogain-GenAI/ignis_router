@@ -37,7 +37,7 @@ class _ModelUnavailableRouter:
 
 class TestRouterApi:
     def test_root_endpoint(self):
-        app = create_app(router=_SuccessfulRouter())
+        app = create_app(enable_db=False, router=_SuccessfulRouter())
         client = TestClient(app)
 
         response = client.get("/")
@@ -50,7 +50,7 @@ class TestRouterApi:
         }
 
     def test_health_endpoint(self):
-        app = create_app(router=_SuccessfulRouter())
+        app = create_app(enable_db=False, router=_SuccessfulRouter())
         client = TestClient(app)
 
         response = client.get("/health")
@@ -59,7 +59,7 @@ class TestRouterApi:
         assert response.json() == {"status": "ok"}
 
     def test_route_endpoint_success(self):
-        app = create_app(router=_SuccessfulRouter())
+        app = create_app(enable_db=False, router=_SuccessfulRouter())
         client = TestClient(app)
 
         response = client.post("/route", json={"query": "Generate Python code for data analysis"})
@@ -72,7 +72,7 @@ class TestRouterApi:
         }
 
     def test_route_endpoint_get_success(self):
-        app = create_app(router=_SuccessfulRouter())
+        app = create_app(enable_db=False, router=_SuccessfulRouter())
         client = TestClient(app)
 
         response = client.get("/route", params={"query": "Generate Python code for data analysis"})
@@ -85,7 +85,7 @@ class TestRouterApi:
         }
 
     def test_route_endpoint_request_validation(self):
-        app = create_app(router=_SuccessfulRouter())
+        app = create_app(enable_db=False, router=_SuccessfulRouter())
         client = TestClient(app)
 
         response = client.post("/route", json={})
@@ -97,7 +97,7 @@ class TestRouterApi:
         assert isinstance(body["details"], list)
 
     def test_route_endpoint_rejects_blank_query(self):
-        app = create_app(router=_SuccessfulRouter())
+        app = create_app(enable_db=False, router=_SuccessfulRouter())
         client = TestClient(app)
 
         response = client.post("/route", json={"query": "   "})
@@ -108,7 +108,7 @@ class TestRouterApi:
         assert body["message"] == "Request validation failed"
 
     def test_route_endpoint_routing_error(self):
-        app = create_app(router=_RoutingErrorRouter())
+        app = create_app(enable_db=False, router=_RoutingErrorRouter())
         client = TestClient(app)
 
         response = client.post("/route", json={"query": "Anything"})
@@ -121,7 +121,7 @@ class TestRouterApi:
         }
 
     def test_route_endpoint_model_unavailable_error(self):
-        app = create_app(router=_ModelUnavailableRouter())
+        app = create_app(enable_db=False, router=_ModelUnavailableRouter())
         client = TestClient(app)
 
         response = client.post("/route", json={"query": "Anything"})

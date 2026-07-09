@@ -1,9 +1,10 @@
 """Main Router class - public API for the ignis_router library."""
 
-from typing import Optional
+from typing import Any, Optional
 
 from .config import RouterConfig, RouterRegistry
 from .intent_detector_factory import IntentDetectorFactory
+from .llm_client import LLMClientRegistry, LLMResponse
 from .models import (
     ModelCapability,
     ModelConfig,
@@ -51,6 +52,7 @@ class Router:
             registry=self._registry,
             intent_detector=self._intent_detector,
         )
+        self._llm_clients: Optional[LLMClientRegistry] = None
 
     @property
     def config(self) -> RouterConfig:
@@ -172,3 +174,98 @@ class Router:
     def get_enabled_models(self) -> list[ModelConfig]:
         """Get all enabled models."""
         return self._registry.get_enabled_models()
+
+    def enable_llm_clients(self, llm_registry: Optional[LLMClientRegistry] = None) -> "Router":
+        """
+        Enable LLM execution so chat() can call real model APIs.
+
+        Args:
+            llm_registry: Optional pre-built client registry.
+                          If omitted, builds from environment variables.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._llm_clients = llm_registry or LLMClientRegistry.from_env()
+        return self
+
+    @property
+    def llm_clients(self) -> Optional[LLMClientRegistry]:
+        """Get the LLM client registry if enabled."""
+        return self._llm_clients
+
+    def chat(
+        self,
+        query: str,
+        *,
+        system_prompt: str = "You are a helpful assistant.",
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """
+        Route a query to the best model AND execute it, returning the AI response.
+
+        Args:
+            query: The user prompt.
+            system_prompt: System message for the LLM.
+            max_tokens: Maximum response tokens.
+            temperature: Sampling temperature.
+            **kwargs: Additional routing parameters (preferred_provider, max_cost, etc.)
+
+        Returns:
+            Dict with routing_result, llm_response content, model, provider, and usage.
+
+        Raises:
+            RuntimeError: If LLM clients are not enabled or provider is unavailable.
+        """
+        if self._llm_clients is None:
+            raise RuntimeError(
+                "LLM clients not enabled. Call router.enable_llm_clients() first."
+            )
+
+        # Extract routing-specific kwargs
+        routing_kwargs = {}
+        for key in ("preferred_provider", "max_cost", "required_capabilities", "context"):
+            if key in kwargs:
+                routing_kwargs[key] = kwargs.pop(key)
+
+        # Route to best model
+        result = self.route(query, **routing_kwargs)
+        provider = result.selected_model.provider
+        model_name = result.selected_model.model_name
+
+        # Get LLM client for selected provider
+        client = self._llm_clients.get(provider)
+        if client is None or not client.is_available():
+            raise RuntimeError(
+                f"No API client available for provider '{provider}'. "
+                f"Set the API key or install the provider package."
+            )
+
+        # Build messages and call LLM
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query},
+        ]
+        llm_response = client.chat(
+            model=model_name,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            **kwargs,
+        )
+
+        return {
+            "content": llm_response.content,
+            "model": llm_response.model,
+            "provider": llm_response.provider,
+            "usage": llm_response.usage,
+            "finish_reason": llm_response.finish_reason,
+            "routing": {
+                "detected_intent": result.detected_intent.value,
+                "complexity": result.complexity.value,
+                "confidence": result.confidence,
+                "reasoning": result.reasoning,
+            },
+        }
