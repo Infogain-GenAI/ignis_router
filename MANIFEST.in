@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include .env.example
+recursive-include src/ignis_router *.py
+recursive-include examples *.py
+recursive-include tests *.py
