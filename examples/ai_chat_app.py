@@ -36,6 +36,7 @@ logging.getLogger("torch").setLevel(logging.ERROR)
 from dotenv import load_dotenv
 
 from ignis_router import Router, RouterConfig
+from ignis_router.routing_decision import build_routing_decision
 
 
 def _project_root() -> Path:
@@ -98,7 +99,7 @@ def main() -> None:
             continue
 
         print(f"\n--- Routing Decision ---")
-        rd = result.get("routing_decision", {})
+        rd = build_routing_decision(result)
         ml_won = rd.get("ml_won", False)
 
         # Show ML prediction
