@@ -17,8 +17,21 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
+import warnings
 from pathlib import Path
+
+# Suppress noisy Longformer/HuggingFace/torch warnings
+warnings.filterwarnings("ignore", message=".*UNEXPECTED.*")
+warnings.filterwarnings("ignore", message=".*unauthenticated requests.*")
+warnings.filterwarnings("ignore", message=".*padded to be a multiple.*")
+warnings.filterwarnings("ignore", message=".*Redirects are currently not supported.*")
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+logging.getLogger("torch").setLevel(logging.ERROR)
 
 from dotenv import load_dotenv
 
@@ -84,12 +97,38 @@ def main() -> None:
             print(f"\nError: {exc}\n")
             continue
 
-        print(f"\n--- Routing ---")
-        print(f"Model:      {result['model']}")
-        print(f"Provider:   {result['provider']}")
-        print(f"Intent:     {result['routing']['detected_intent']}")
-        print(f"Complexity: {result['routing']['complexity']}")
-        print(f"Confidence: {result['routing']['confidence']:.2f}")
+        print(f"\n--- Routing Decision ---")
+        routing = result["routing"]
+        originally_selected = routing.get("originally_selected", "")
+        selection_mode = routing.get("selection_mode", "")
+        ml_hint = routing.get("ml_model_hint", "")
+        fallback_used = result.get("fallback_used", False)
+        intent = routing["detected_intent"]
+
+        # Always show ML prediction if we have one
+        ml_predicted = ml_hint or (originally_selected if "ml" in selection_mode else "")
+        if ml_predicted:
+            print(f"ML Router Predicted:   {ml_predicted}")
+
+        # Always show what rule-based would pick for this intent
+        from ignis_router.supported_models import get_default_intent_rules
+        rule_model = next(
+            (r.target_model_id for r in get_default_intent_rules() if r.intent and r.intent.value == intent),
+            None,
+        )
+        if rule_model:
+            print(f"Rule-Based Would Pick: {rule_model} (intent rule: {intent})")
+
+        # Show final model actually used
+        if fallback_used:
+            print(f"Default Model Used:    {result['model']} ({result['provider']})")
+            print(f"Note:                  API key not available for '{originally_selected}', switched to available provider.")
+        else:
+            print(f"Final Model Used:      {result['model']} ({result['provider']})")
+
+        print(f"Intent:                {intent}")
+        print(f"Complexity:            {routing['complexity']}")
+        print(f"Confidence:            {routing['confidence']:.2f}")
 
         usage = result.get("usage", {})
         if usage:

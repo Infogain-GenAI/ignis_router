@@ -17,6 +17,7 @@ from .config import RouterConfig
 from .exceptions import ConfigurationError, ModelNotAvailableError, RoutingError
 from .persistence import PostgresRouteLogger
 from .router import Router
+from .routing_decision import build_routing_decision, log_routing_decision_to_db
 
 
 class RouteRequest(BaseModel):
@@ -70,6 +71,7 @@ class ChatResponse(BaseModel):
     usage: dict[str, int] = Field(default_factory=dict)
     finish_reason: str = ""
     routing: dict[str, Any] = Field(default_factory=dict)
+    routing_decision: dict[str, Any] = Field(default_factory=dict)
 
 
 class ErrorResponse(BaseModel):
@@ -173,10 +175,6 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
             ).model_dump(),
         )
 
-    @app.get("/")
-    async def root() -> dict[str, str]:
-        return {"name": "Ignis Router API", "status": "ok", "docs": "/docs"}
-
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -205,45 +203,6 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
             confidence=round(result.confidence, 2),
         )
 
-    @app.get(
-        "/route",
-        response_model=RouteResponse,
-        responses={
-            400: {"model": ErrorResponse},
-            422: {"model": ErrorResponse},
-            500: {"model": ErrorResponse},
-            503: {"model": ErrorResponse},
-        },
-    )
-    async def route_query_get(
-        query: str = Query(..., min_length=1, description="Prompt text to route"),
-    ) -> RouteResponse:
-        cleaned_query = query.strip()
-        if not cleaned_query:
-            raise RequestValidationError(
-                [
-                    {
-                        "type": "value_error",
-                        "loc": ("query", "query"),
-                        "msg": "Value error, query must not be empty",
-                        "input": query,
-                    }
-                ]
-            )
-
-        result = app.state.router.route(cleaned_query)
-        strategy = app.state.router.config.routing_strategy
-        if app.state.db_logger:
-            try:
-                app.state.db_logger.log_response(cleaned_query, result, strategy)
-            except Exception:
-                pass
-        return RouteResponse(
-            selected_model=result.selected_model.model_name,
-            strategy=strategy,
-            confidence=round(result.confidence, 2),
-        )
-
     @app.post(
         "/chat",
         response_model=ChatResponse,
@@ -256,16 +215,6 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
     )
     async def chat_query(payload: ChatRequest) -> ChatResponse:
         try:
-            # Route first to capture the RoutingResult for DB logging
-            routing_result = app.state.router.route(payload.query)
-            strategy = app.state.router.config.routing_strategy
-
-            if app.state.db_logger:
-                try:
-                    app.state.db_logger.log_response(payload.query, routing_result, strategy)
-                except Exception:
-                    pass
-
             result = app.state.router.chat(
                 payload.query,
                 system_prompt=payload.system_prompt,
@@ -280,95 +229,19 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
                     message=str(exc),
                 ).model_dump(),
             )
+
+        # Build routing decision using shared logic (same as decorators)
+        routing_decision = build_routing_decision(result)
+        result["routing_decision"] = routing_decision
+
+        # Save to DB using shared logic
+        log_routing_decision_to_db(
+            query=payload.query,
+            routing_decision=routing_decision,
+            strategy=app.state.router.config.routing_strategy,
+            response_content=result.get("content", ""),
+        )
+
         return ChatResponse(**result)
-
-    @app.get("/providers")
-    async def list_providers() -> dict[str, Any]:
-        router = app.state.router
-        llm = router.llm_clients
-        available = llm.get_available_providers() if llm else []
-        return {"available_providers": available}
-
-    @app.get("/models")
-    async def list_models() -> list[dict[str, Any]]:
-        """Return all registered models with their metadata."""
-        models = app.state.router.get_registered_models()
-        return [
-            {
-                "model_id": m.model_id,
-                "provider": m.provider,
-                "model_name": m.model_name,
-                "capabilities": [c.value for c in m.capabilities],
-                "cost_per_1k_input_tokens": m.cost_per_1k_input_tokens,
-                "cost_per_1k_output_tokens": m.cost_per_1k_output_tokens,
-                "latency": m.latency,
-                "quality": m.quality,
-                "reliability": m.reliability,
-                "priority": m.priority,
-                "enabled": m.enabled,
-            }
-            for m in models
-        ]
-
-    @app.get("/rules")
-    async def list_rules() -> list[dict[str, Any]]:
-        """Return all active routing rules."""
-        rules = app.state.router.registry.get_rules()
-        return [
-            {
-                "rule_id": r.rule_id,
-                "intent": r.intent.value if r.intent else None,
-                "complexity": r.complexity.value if r.complexity else None,
-                "required_capabilities": [c.value for c in r.required_capabilities],
-                "target_model_id": r.target_model_id,
-                "priority": r.priority,
-                "enabled": r.enabled,
-            }
-            for r in rules
-        ]
-
-    @app.get("/history")
-    async def get_history(
-        limit: int = Query(default=20, ge=1, le=100, description="Number of recent records"),
-    ) -> list[dict[str, Any]]:
-        """Return recent routing responses from PostgreSQL."""
-        db = app.state.db_logger
-        if db is None:
-            return JSONResponse(
-                status_code=503,
-                content=ErrorResponse(
-                    error="db_unavailable",
-                    message="PostgreSQL is not configured or unreachable.",
-                ).model_dump(),
-            )
-        try:
-            with db._connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        f"SELECT id, query_text, selected_model, strategy, "
-                        f"confidence, created_at FROM {db.settings.table} "
-                        f"ORDER BY id DESC LIMIT %s",
-                        (limit,),
-                    )
-                    rows = cur.fetchall()
-            return [
-                {
-                    "id": row[0],
-                    "query": row[1],
-                    "selected_model": row[2],
-                    "strategy": row[3],
-                    "confidence": row[4],
-                    "created_at": row[5].isoformat(),
-                }
-                for row in rows
-            ]
-        except Exception as exc:
-            return JSONResponse(
-                status_code=500,
-                content=ErrorResponse(
-                    error="db_error",
-                    message=f"Failed to fetch history: {exc}",
-                ).model_dump(),
-            )
 
     return app
