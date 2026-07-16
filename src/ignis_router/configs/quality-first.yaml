@@ -1,0 +1,6 @@
+strategy: quality-first
+weights:
+  quality: 50
+  latency: 15
+  cost: 10
+  reliability: 25

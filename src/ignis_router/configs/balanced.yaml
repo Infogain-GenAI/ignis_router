@@ -1,0 +1,6 @@
+strategy: balanced
+weights:
+  quality: 40
+  latency: 20
+  cost: 20
+  reliability: 20

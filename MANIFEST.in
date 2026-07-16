@@ -2,5 +2,7 @@ include README.md
 include LICENSE
 include .env.example
 recursive-include src/ignis_router *.py
+recursive-include src/ignis_router *.yaml
+recursive-include src/ignis_router *.sql
 recursive-include examples *.py
 recursive-include tests *.py

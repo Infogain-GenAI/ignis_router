@@ -10,6 +10,37 @@ from .exceptions import ConfigurationError
 from .models import ModelConfig, RoutingRule
 
 
+def get_bundled_configs_dir() -> Path:
+    """Return the path to configs bundled inside the installed package."""
+    return Path(__file__).parent / "configs"
+
+
+def resolve_config_path(path: str) -> Path:
+    """
+    Resolve a config file path.
+    Checks (in order):
+    1. Absolute path as given
+    2. Relative to current working directory
+    3. Bundled configs inside the installed package
+    """
+    p = Path(path)
+    if p.is_absolute() and p.exists():
+        return p
+    if p.exists():
+        return p.resolve()
+    # Fall back to bundled configs
+    bundled = get_bundled_configs_dir() / p.name
+    if bundled.exists():
+        return bundled
+    # Also try matching subdirectory names
+    for candidate in get_bundled_configs_dir().rglob(p.name):
+        return candidate
+    raise ConfigurationError(
+        f"Config file not found: '{path}'. "
+        f"Checked CWD and bundled package configs at '{get_bundled_configs_dir()}'."
+    )
+
+
 class RouterConfig(BaseSettings):
     """Configuration settings for the router."""
 
@@ -177,7 +208,8 @@ class RouterConfig(BaseSettings):
         """Load router configuration with routing strategy and weights from YAML."""
         from .config_framework import load_routing_yaml
 
-        parsed = load_routing_yaml(Path(yaml_path))
+        resolved = resolve_config_path(yaml_path)
+        parsed = load_routing_yaml(resolved)
         payload = {
             "routing_strategy": parsed.strategy,
             "routing_weights": parsed.weights,

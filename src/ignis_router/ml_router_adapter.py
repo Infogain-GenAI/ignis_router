@@ -48,7 +48,10 @@ class MLRouterAdapter:
 
         self._router_type = router_type
         self._project_root = project_root or str(Path(__file__).resolve().parents[2])
-        self._config_dir = os.path.join(self._project_root, config_dir)
+        # Prefer bundled configs inside the installed package; fall back to project root
+        bundled_config_dir = str(Path(__file__).parent / "configs" / "ml_routers")
+        project_config_dir = os.path.join(self._project_root, config_dir)
+        self._config_dir = bundled_config_dir if os.path.isdir(bundled_config_dir) else project_config_dir
         self._router: Any = None
         self._available = False
 
