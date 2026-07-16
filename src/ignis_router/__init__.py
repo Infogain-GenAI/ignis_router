@@ -32,8 +32,6 @@ from .intent_detector import (
     RuleBasedIntentDetector,
 )
 from .intent_detector_factory import IntentDetectorFactory
-<<<<<<< Updated upstream
-=======
 from .ml_router_adapter import MLRouterAdapter, resolve_llm_for_prediction
 from .llmrouter_integration import (
     EmbeddingEngine,
@@ -42,7 +40,6 @@ from .llmrouter_integration import (
     check_llm_key_available,
 )
 from .decorators import chat, get_shared_router, retry, route, set_shared_router, timed, with_router
->>>>>>> Stashed changes
 from .model_selector import ModelSelector
 from .models import (
     Intent,
