@@ -32,12 +32,28 @@ class RoutingEngine:
         self._registry = registry or RouterRegistry()
         self._intent_detector = intent_detector
         self._model_selector = ModelSelector(self._registry, self._config)
+        self._ml_router = None
 
         if self._intent_detector is None:
             # Delayed import to avoid circular dependency between config and factory modules.
             from .intent_detector_factory import IntentDetectorFactory
 
             self._intent_detector = IntentDetectorFactory.create(self._config)
+
+        # Initialize ML router adapter independently of intent detector
+        if self._config.enable_ml_model_hint_routing:
+            try:
+                from .ml_router_adapter import MLRouterAdapter
+                self._ml_router = MLRouterAdapter(
+                    router_type=self._config.ml_router_type,
+                    project_root=None,
+                )
+                if not self._ml_router.is_available:
+                    logger.warning("ML router adapter not available. Will use fallback path.")
+                    self._ml_router = None
+            except Exception as exc:
+                logger.warning("Failed to initialize ML router adapter: %s", exc)
+                self._ml_router = None
 
     @property
     def config(self) -> RouterConfig:
@@ -73,6 +89,18 @@ class RoutingEngine:
         # Try intent-based selection first (includes intent rules and scoring).
         model_hint = self._extract_model_hint()
 
+        # Try ML router adapter (llmrouter-lib) for model prediction
+        if self._config.enable_ml_model_hint_routing and self._ml_router is not None and not model_hint:
+            ml_prediction = self._ml_router.predict_model(request.query)
+            if ml_prediction:
+                model_hint = ml_prediction
+                logger.info("ML router '%s' predicted: %s", self._ml_router.router_type, ml_prediction)
+            else:
+                logger.warning(
+                    "ML router '%s' returned no prediction. Trying legacy model hint.",
+                    self._ml_router.router_type,
+                )
+
         # If ML hint routing is enabled and ML produced a model hint,
         # use the ML prediction directly — skip intent-based selection.
         if self._config.enable_ml_model_hint_routing and model_hint:
@@ -90,6 +118,7 @@ class RoutingEngine:
                     "weights": dict(self._config.routing_weights),
                     "scores": {hinted_model.model_id: round(confidence, 4)},
                     "model_hint": model_hint,
+                    "ml_won": True,
                 }
             else:
                 selected_model = None

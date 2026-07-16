@@ -309,5 +309,6 @@ class Router:
                 "originally_selected": result.selected_model.model_name,
                 "selection_mode": result.scoring_details.get("selection_mode", ""),
                 "ml_model_hint": result.scoring_details.get("model_hint", ""),
+                "ml_won": result.scoring_details.get("ml_won", False),
             },
         }

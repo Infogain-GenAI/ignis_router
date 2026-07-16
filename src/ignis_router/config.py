@@ -96,6 +96,20 @@ class RouterConfig(BaseSettings):
             "IGNIS_ROUTER_ENABLE_ML_MODEL_HINT_ROUTING",
         ),
     )
+    ml_router_type: str = Field(
+        default="knn",
+        description="ML router type from llmrouter-lib: knn, svm, graph, or mf",
+        validation_alias=AliasChoices(
+            "ML_ROUTER_TYPE", "IGNIS_ROUTER_ML_ROUTER_TYPE"
+        ),
+    )
+    ml_router_config_dir: str = Field(
+        default="configs/ml_routers",
+        description="Directory containing ML router YAML configs",
+        validation_alias=AliasChoices(
+            "ML_ROUTER_CONFIG_DIR", "IGNIS_ROUTER_ML_ROUTER_CONFIG_DIR"
+        ),
+    )
     model_hint_aliases: dict[str, str] = Field(
         default_factory=lambda: {
             "codegemma-7b": "gpt-4.1",

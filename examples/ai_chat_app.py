@@ -98,41 +98,35 @@ def main() -> None:
             continue
 
         print(f"\n--- Routing Decision ---")
-        routing = result["routing"]
-        originally_selected = routing.get("originally_selected", "")
-        selection_mode = routing.get("selection_mode", "")
-        ml_hint = routing.get("ml_model_hint", "")
-        fallback_used = result.get("fallback_used", False)
-        intent = routing["detected_intent"]
+        rd = result.get("routing_decision", {})
+        ml_won = rd.get("ml_won", False)
 
-        # Always show ML prediction if we have one
-        ml_predicted = ml_hint or (originally_selected if "ml" in selection_mode else "")
-        if ml_predicted:
-            print(f"ML Router Predicted:   {ml_predicted}")
+        # Show ML prediction
+        if rd.get("ml_router_predicted"):
+            print(f"ML Router Predicted:   {rd['ml_router_predicted']}")
 
-        # Always show what rule-based would pick for this intent
-        from ignis_router.supported_models import get_default_intent_rules
-        rule_model = next(
-            (r.target_model_id for r in get_default_intent_rules() if r.intent and r.intent.value == intent),
-            None,
-        )
-        if rule_model:
-            print(f"Rule-Based Would Pick: {rule_model} (intent rule: {intent})")
+        # Show rule-based only when ML didn't win (fell back to rule-based)
+        if not ml_won and rd.get("rule_based_would_pick"):
+            print(f"Rule-Based Selected:   {rd['rule_based_would_pick']}")
 
-        # Show final model actually used
-        if fallback_used:
-            print(f"Default Model Used:    {result['model']} ({result['provider']})")
-            print(f"Note:                  API key not available for '{originally_selected}', switched to available provider.")
+        # Show final model
+        if result.get("fallback_used"):
+            print(f"Default Model Used:    {rd['final_model']}")
+            if rd.get("note"):
+                print(f"Note:                  {rd['note']}")
         else:
-            print(f"Final Model Used:      {result['model']} ({result['provider']})")
+            print(f"Final Model Used:      {rd['final_model']}")
 
-        print(f"Intent:                {intent}")
-        print(f"Complexity:            {routing['complexity']}")
-        print(f"Confidence:            {routing['confidence']:.2f}")
+        # Show intent only when rule-based was used (ML didn't win)
+        if not ml_won and rd.get("intent"):
+            print(f"Intent:                {rd['intent']}")
 
-        usage = result.get("usage", {})
-        if usage:
-            print(f"Tokens:     {usage.get('total_tokens', 'N/A')}")
+        print(f"Complexity:            {rd.get('complexity', '')}")
+        print(f"Confidence:            {rd.get('confidence', 0):.2f}")
+
+        tokens = rd.get("tokens", 0)
+        if tokens:
+            print(f"Tokens:                {tokens}")
 
         print(f"\n--- Response ---")
         print(result["content"])

@@ -44,6 +44,7 @@ class ModelCapability(str, Enum):
 
 class ModelConfig(BaseModel):
     """Configuration for a registered model."""
+    # The router reads this configuration to decide the best model by rules + weighted scoring.
 
     model_id: str = Field(..., description="Unique identifier for the model")
     provider: str = Field(..., description="Provider name (e.g., openai, anthropic, gemini)")

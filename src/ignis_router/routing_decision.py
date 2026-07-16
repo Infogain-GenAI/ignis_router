@@ -19,6 +19,7 @@ def build_routing_decision(
     originally_selected = routing.get("originally_selected", "")
     selection_mode = routing.get("selection_mode", "")
     ml_hint = routing.get("ml_model_hint", "")
+    ml_won = routing.get("ml_won", False)
     fallback_used = response.get("fallback_used", False)
     intent = routing.get("detected_intent", "")
 
@@ -38,7 +39,8 @@ def build_routing_decision(
         "rule_based_would_pick": f"{rule_based_pick} (intent rule: {intent})" if rule_based_pick else "",
         "final_model": f"{response.get('model', '')} ({response.get('provider', '')})",
         "note": note,
-        "intent": intent,
+        "ml_won": ml_won,
+        "intent": intent if not ml_won else "",
         "complexity": routing.get("complexity", ""),
         "confidence": routing.get("confidence", 0.0),
         "tokens": response.get("usage", {}).get("total_tokens", 0),
