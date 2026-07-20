@@ -237,11 +237,49 @@ class Router:
 
         # Get LLM client for selected provider
         client = self._llm_clients.get(provider)
+        fallback_used = False
+
         if client is None or not client.is_available():
-            raise RuntimeError(
-                f"No API client available for provider '{provider}'. "
-                f"Set the API key or install the provider package."
+            # Selected model's provider has no API key — try fallback models
+            fallback_client = None
+            fallback_model = None
+
+            for fb in result.fallback_models:
+                fb_client = self._llm_clients.get(fb.provider)
+                if fb_client is not None and fb_client.is_available():
+                    fallback_client = fb_client
+                    fallback_model = fb
+                    break
+
+            # If no fallback from routing result, try any available provider
+            if fallback_client is None:
+                available_providers = self._llm_clients.get_available_providers()
+                for ap in available_providers:
+                    for m in self._registry.get_enabled_models():
+                        if m.provider == ap:
+                            fallback_client = self._llm_clients.get(ap)
+                            fallback_model = m
+                            break
+                    if fallback_client:
+                        break
+
+            if fallback_client is None or fallback_model is None:
+                raise RuntimeError(
+                    f"No API client available for provider '{provider}'. "
+                    f"Set the API key or install the provider package."
+                )
+
+            import logging
+            logging.getLogger(__name__).warning(
+                "API key not available for '%s'. Switching to '%s' (%s).",
+                provider,
+                fallback_model.model_name,
+                fallback_model.provider,
             )
+            client = fallback_client
+            provider = fallback_model.provider
+            model_name = fallback_model.model_name
+            fallback_used = True
 
         # Build messages and call LLM
         messages = [
@@ -262,10 +300,15 @@ class Router:
             "provider": llm_response.provider,
             "usage": llm_response.usage,
             "finish_reason": llm_response.finish_reason,
+            "fallback_used": fallback_used,
             "routing": {
                 "detected_intent": result.detected_intent.value,
                 "complexity": result.complexity.value,
                 "confidence": result.confidence,
                 "reasoning": result.reasoning,
+                "originally_selected": result.selected_model.model_name,
+                "selection_mode": result.scoring_details.get("selection_mode", ""),
+                "ml_model_hint": result.scoring_details.get("model_hint", ""),
+                "ml_won": result.scoring_details.get("ml_won", False),
             },
         }

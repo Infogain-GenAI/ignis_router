@@ -378,6 +378,8 @@ class HybridIntentDetector(BaseIntentDetector):
 
     def detect_intent(self, text: str) -> tuple[Intent, float]:
         """Try ML first, then fall back when unavailable, failed, or low confidence."""
+        self._ml_won = False
+
         if not self._ml_detector.is_available:
             self._ml_detector.clear_model_hint()
             logger.warning("ML model unavailable. Falling back to Rule-Based Detector.")
@@ -403,7 +405,22 @@ class HybridIntentDetector(BaseIntentDetector):
             )
             return self._rule_based_detector.detect_intent(text)
 
+        # ML confidence is high enough — ML wins.
+        # If ML predicted a model label (not intent), keep the hint for ML router.
+        # Still use rule-based for intent detection internally, but mark ML as winner.
+        if self._ml_detector.get_model_hint():
+            self._ml_won = True
+            # Use rule-based for internal intent (needed for scoring fallback),
+            # but ML model hint takes priority for model selection.
+            rb_intent, rb_conf = self._rule_based_detector.detect_intent(text)
+            return rb_intent, confidence  # keep ML confidence
+
         return intent, confidence
+
+    @property
+    def ml_won(self) -> bool:
+        """Whether ML prediction won (confidence >= threshold) on last query."""
+        return getattr(self, "_ml_won", False)
 
     def assess_complexity(self, text: str) -> TaskComplexity:
         """Complexity remains heuristic-driven regardless of detector strategy."""

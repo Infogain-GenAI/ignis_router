@@ -32,6 +32,14 @@ from .intent_detector import (
     RuleBasedIntentDetector,
 )
 from .intent_detector_factory import IntentDetectorFactory
+from .ml_router_adapter import MLRouterAdapter, resolve_llm_for_prediction
+from .llmrouter_integration import (
+    EmbeddingEngine,
+    MLInferenceEngine,
+    TrainingPipeline,
+    check_llm_key_available,
+)
+from .decorators import chat, get_shared_router, retry, route, set_shared_router, timed, with_router
 from .model_selector import ModelSelector
 from .models import (
     Intent,
@@ -98,4 +106,17 @@ __all__ = [
     "IntentDetectionError",
     "ModelNotAvailableError",
     "ConfigurationError",
+    # Decorators
+    "route",
+    "chat",
+    "with_router",
+    "retry",
+    "timed",
+    "get_shared_router",
+    "set_shared_router",
+    # LLMRouter Integration (ML inference, embeddings, training)
+    "MLInferenceEngine",
+    "EmbeddingEngine",
+    "TrainingPipeline",
+    "check_llm_key_available",
 ]

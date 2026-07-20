@@ -57,9 +57,16 @@ class PostgresRouteLogger:
         CREATE TABLE IF NOT EXISTS {self.settings.table} (
             id BIGSERIAL PRIMARY KEY,
             query_text TEXT NOT NULL,
-            selected_model TEXT NOT NULL,
-            strategy TEXT NOT NULL,
+            ml_router_predicted TEXT,
+            rule_based_would_pick TEXT,
+            default_model_used TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            note TEXT,
+            intent TEXT NOT NULL,
+            complexity TEXT NOT NULL,
             confidence DOUBLE PRECISION NOT NULL,
+            tokens INTEGER DEFAULT 0,
+            strategy TEXT NOT NULL,
             response_json JSONB NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -70,13 +77,14 @@ class PostgresRouteLogger:
             conn.commit()
 
     def log_response(self, query: str, result: RoutingResult, strategy: str) -> None:
-        """Persist one routing response row."""
+        """Persist one routing response row (legacy format)."""
         payload = json.loads(result.model_dump_json())
         insert_sql = f"""
         INSERT INTO {self.settings.table}
-            (query_text, selected_model, strategy, confidence, response_json)
+            (query_text, default_model_used, provider, intent, complexity,
+             confidence, strategy, response_json)
         VALUES
-            (%s, %s, %s, %s, %s::jsonb)
+            (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
         """
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -85,8 +93,61 @@ class PostgresRouteLogger:
                     (
                         query,
                         result.selected_model.model_name,
-                        strategy,
+                        result.selected_model.provider,
+                        result.detected_intent.value,
+                        result.complexity.value,
                         result.confidence,
+                        strategy,
+                        json.dumps(payload),
+                    ),
+                )
+            conn.commit()
+
+    def log_routing_decision(
+        self,
+        query: str,
+        routing_decision: dict,
+        strategy: str,
+        response_content: str = "",
+    ) -> None:
+        """Persist a full routing decision with ML/rule-based/default model info."""
+        insert_sql = f"""
+        INSERT INTO {self.settings.table}
+            (query_text, ml_router_predicted, rule_based_would_pick,
+             default_model_used, provider, note, intent, complexity,
+             confidence, tokens, strategy, response_json)
+        VALUES
+            (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+        """
+        # Extract provider from final_model string like "gpt-4.1 (openai)"
+        final_model = routing_decision.get("final_model", "")
+        provider = ""
+        model_name = final_model
+        if "(" in final_model and ")" in final_model:
+            model_name = final_model.split("(")[0].strip()
+            provider = final_model.split("(")[1].rstrip(")")
+
+        payload = {
+            "routing_decision": routing_decision,
+            "response_preview": response_content[:500] if response_content else "",
+        }
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    insert_sql,
+                    (
+                        query,
+                        routing_decision.get("ml_router_predicted", ""),
+                        routing_decision.get("rule_based_would_pick", ""),
+                        model_name,
+                        provider,
+                        routing_decision.get("note", ""),
+                        routing_decision.get("intent", ""),
+                        routing_decision.get("complexity", ""),
+                        routing_decision.get("confidence", 0.0),
+                        routing_decision.get("tokens", 0),
+                        strategy,
                         json.dumps(payload),
                     ),
                 )

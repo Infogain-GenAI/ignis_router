@@ -17,12 +17,26 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
+import warnings
 from pathlib import Path
+
+# Suppress noisy Longformer/HuggingFace/torch warnings
+warnings.filterwarnings("ignore", message=".*UNEXPECTED.*")
+warnings.filterwarnings("ignore", message=".*unauthenticated requests.*")
+warnings.filterwarnings("ignore", message=".*padded to be a multiple.*")
+warnings.filterwarnings("ignore", message=".*Redirects are currently not supported.*")
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+logging.getLogger("torch").setLevel(logging.ERROR)
 
 from dotenv import load_dotenv
 
 from ignis_router import Router, RouterConfig
+from ignis_router.routing_decision import build_routing_decision
 
 
 def _project_root() -> Path:
@@ -84,16 +98,36 @@ def main() -> None:
             print(f"\nError: {exc}\n")
             continue
 
-        print(f"\n--- Routing ---")
-        print(f"Model:      {result['model']}")
-        print(f"Provider:   {result['provider']}")
-        print(f"Intent:     {result['routing']['detected_intent']}")
-        print(f"Complexity: {result['routing']['complexity']}")
-        print(f"Confidence: {result['routing']['confidence']:.2f}")
+        print(f"\n--- Routing Decision ---")
+        rd = build_routing_decision(result)
+        ml_won = rd.get("ml_won", False)
 
-        usage = result.get("usage", {})
-        if usage:
-            print(f"Tokens:     {usage.get('total_tokens', 'N/A')}")
+        # Show ML prediction
+        if rd.get("ml_router_predicted"):
+            print(f"ML Router Predicted:   {rd['ml_router_predicted']}")
+
+        # Show rule-based only when ML didn't win (fell back to rule-based)
+        if not ml_won and rd.get("rule_based_would_pick"):
+            print(f"Rule-Based Selected:   {rd['rule_based_would_pick']}")
+
+        # Show final model
+        if result.get("fallback_used"):
+            print(f"Default Model Used:    {rd['final_model']}")
+            if rd.get("note"):
+                print(f"Note:                  {rd['note']}")
+        else:
+            print(f"Final Model Used:      {rd['final_model']}")
+
+        # Show intent only when rule-based was used (ML didn't win)
+        if not ml_won and rd.get("intent"):
+            print(f"Intent:                {rd['intent']}")
+
+        print(f"Complexity:            {rd.get('complexity', '')}")
+        print(f"Confidence:            {rd.get('confidence', 0):.2f}")
+
+        tokens = rd.get("tokens", 0)
+        if tokens:
+            print(f"Tokens:                {tokens}")
 
         print(f"\n--- Response ---")
         print(result["content"])

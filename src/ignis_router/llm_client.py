@@ -185,7 +185,7 @@ class GeminiClient(BaseLLMClient):
 
     @property
     def provider_name(self) -> str:
-        return "gemini"
+        return "gemini" 
 
     def is_available(self) -> bool:
         return bool(self._api_key)
