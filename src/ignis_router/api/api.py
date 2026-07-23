@@ -308,14 +308,26 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
             )
 
     @app.get("/dashboard")
-    async def get_dashboard(days: int = Query(default=7, ge=1, le=365, description="Number of days")) -> dict[str, Any]:
+    async def get_dashboard(
+        days: int = Query(default=7, ge=1, le=365, description="Number of days"),
+        strategy: str | None = Query(default=None, description="Optional routing strategy filter"),
+        intent: str | None = Query(default=None, description="Optional detected intent filter"),
+        page: int = Query(default=1, ge=1, description="Routing log page number"),
+        page_size: int = Query(default=20, ge=1, le=100, description="Routing log page size"),
+    ) -> dict[str, Any]:
         """
         Full dashboard payload with KPIs, charts, and routing log.
         Designed for frontend consumption.
         """
         try:
             engine = DashboardEngine()
-            return engine.generate(days=days)
+            return engine.generate(
+                days=days,
+                strategy=strategy,
+                intent=intent,
+                page=page,
+                page_size=page_size,
+            )
         except Exception as exc:
             return JSONResponse(
                 status_code=500,

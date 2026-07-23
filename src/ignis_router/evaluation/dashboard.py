@@ -48,23 +48,44 @@ class DashboardEngine:
             password=self._settings.password,
         )
 
-    def generate(self, days: int = 7) -> dict[str, Any]:
+    def generate(
+        self,
+        days: int = 7,
+        strategy: Optional[str] = None,
+        intent: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
         """Generate full dashboard payload."""
         end = datetime.now()
         start = end - timedelta(days=days)
-        rows = self._fetch_rows(start, end)
+        normalized_strategy = self._normalize_filter(strategy)
+        normalized_intent = self._normalize_filter(intent)
+        rows = self._fetch_rows(start, end, normalized_strategy, normalized_intent)
+        routing_log = self._build_routing_log(rows, page=page, page_size=page_size)
 
         return {
             "generated_at": datetime.utcnow().isoformat() + "+00:00",
             "window_hours": days * 24,
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
+            "filters": {
+                "strategy": normalized_strategy,
+                "intent": normalized_intent,
+            },
             "kpis": self._build_kpis(rows),
             "charts": self._build_charts(rows),
-            "routing_log": self._build_routing_log(rows),
+            "routing_log": routing_log["items"],
+            "routing_log_pagination": routing_log["pagination"],
         }
 
-    def _fetch_rows(self, start: datetime, end: datetime) -> list[dict]:
+    def _fetch_rows(
+        self,
+        start: datetime,
+        end: datetime,
+        strategy: Optional[str] = None,
+        intent: Optional[str] = None,
+    ) -> list[dict]:
         query = f"""
         SELECT query_text, ml_router_predicted, rule_based_would_pick,
                default_model_used, provider, intent, complexity,
@@ -74,14 +95,36 @@ class DashboardEngine:
         WHERE created_at >= %s AND created_at <= %s
         ORDER BY created_at DESC
         """
+        params: list[Any] = [start, end]
+        filters: list[str] = []
+
+        if strategy:
+            filters.append("LOWER(strategy) = LOWER(%s)")
+            params.append(strategy)
+
+        if intent:
+            filters.append("LOWER(intent) = LOWER(%s)")
+            params.append(intent)
+
+        if filters:
+            query = query.replace("ORDER BY created_at DESC", f"AND {' AND '.join(filters)}\n        ORDER BY created_at DESC")
+
         rows = []
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (start, end))
+                cur.execute(query, params)
                 columns = [desc[0] for desc in cur.description]
                 for row in cur.fetchall():
                     rows.append(dict(zip(columns, row)))
         return rows
+
+    def _normalize_filter(self, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned or cleaned.lower() == "all":
+            return None
+        return cleaned
 
     # ─── KPIs ──────────────────────────────────────────────────────────────
 
@@ -269,6 +312,8 @@ class DashboardEngine:
                 "intent": i,
                 "avg_confidence": round(sum((r.get("confidence") or 0) for r in rs) / len(rs), 4),
                 "query_count": len(rs),
+                "ml_won_count": sum(1 for r in rs if r.get("ml_won")),
+                "rule_based_won_count": sum(1 for r in rs if not r.get("ml_won")),
                 "top_model": max(
                     set((r.get("default_model_used") or "unknown") for r in rs),
                     key=lambda m: sum(1 for r in rs if r.get("default_model_used") == m),
@@ -293,10 +338,17 @@ class DashboardEngine:
 
     # ─── ROUTING LOG ───────────────────────────────────────────────────────
 
-    def _build_routing_log(self, rows: list[dict]) -> list[dict]:
-        """Return last 20 routing decisions for the log table."""
-        recent = rows[:20]
-        return [
+    def _build_routing_log(self, rows: list[dict], page: int = 1, page_size: int = 20) -> dict[str, Any]:
+        """Return paginated routing decisions for the log table."""
+        safe_page = max(page, 1)
+        safe_page_size = max(page_size, 1)
+        total_count = len(rows)
+        total_pages = max((total_count + safe_page_size - 1) // safe_page_size, 1)
+        current_page = min(safe_page, total_pages)
+        start_idx = (current_page - 1) * safe_page_size
+        end_idx = start_idx + safe_page_size
+        recent = rows[start_idx:end_idx]
+        items = [
             {
                 "query": (r.get("query_text") or "")[:100],
                 "intent": r.get("intent") or "unknown",
@@ -312,6 +364,17 @@ class DashboardEngine:
             }
             for r in recent
         ]
+        return {
+            "items": items,
+            "pagination": {
+                "page": current_page,
+                "page_size": safe_page_size,
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "has_prev": current_page > 1,
+                "has_next": current_page < total_pages,
+            },
+        }
 
     # ─── HELPERS ───────────────────────────────────────────────────────────
 
