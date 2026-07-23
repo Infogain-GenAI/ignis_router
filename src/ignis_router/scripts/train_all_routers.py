@@ -9,7 +9,7 @@ Usage:
     python scripts/train_all_routers.py
 
 Prerequisites:
-    - llmrouter-lib installed (pip install -e path/to/LLMRouter)
+    - llmrouter-lib installed (pip install llmrouter-lib)
     - Example data available in llmrouter-lib's data/ folder
 """
 

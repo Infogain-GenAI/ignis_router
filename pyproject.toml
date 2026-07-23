@@ -43,7 +43,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "httpx>=0.27.0",
-    "llmrouter-lib @ git+https://github.com/ulab-uiuc/LLMRouter.git@main",
+    "llmrouter-lib",
 ]
 
 [project.urls]
