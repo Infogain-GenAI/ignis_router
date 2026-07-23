@@ -7,9 +7,9 @@ Supports intent detection, complexity assessment, and rule-based routing.
 
 from .config import RouterConfig, RouterRegistry
 from .config_framework import RoutingYamlConfig, load_routing_yaml
-from .api import ChatRequest, ChatResponse, ErrorResponse, RouteRequest, RouteResponse, create_app
-from .client import ChatResult, IgnisClient, RouteResult
-from .llm_client import (
+from .api.api import ChatRequest, ChatResponse, ErrorResponse, RouteRequest, RouteResponse, create_app
+from .api.client import ChatResult, IgnisClient, RouteResult
+from .llm.llm_client import (
     AnthropicClient,
     BaseLLMClient,
     GeminiClient,
@@ -24,23 +24,23 @@ from .exceptions import (
     ModelNotAvailableError,
     RoutingError,
 )
-from .intent_detector import (
+from .detection.intent_detector import (
     BaseIntentDetector,
     HybridIntentDetector,
     IntentDetector,
     MLIntentDetector,
     RuleBasedIntentDetector,
 )
-from .intent_detector_factory import IntentDetectorFactory
-from .ml_router_adapter import MLRouterAdapter, resolve_llm_for_prediction
-from .llmrouter_integration import (
+from .detection.intent_detector_factory import IntentDetectorFactory
+from .ml.ml_router_adapter import MLRouterAdapter, resolve_llm_for_prediction
+from .ml.llmrouter_integration import (
     EmbeddingEngine,
     MLInferenceEngine,
     TrainingPipeline,
     check_llm_key_available,
 )
 from .decorators import chat, get_shared_router, retry, route, set_shared_router, timed, with_router
-from .model_selector import ModelSelector
+from .core.model_selector import ModelSelector
 from .models import (
     Intent,
     ModelCapability,
@@ -50,9 +50,9 @@ from .models import (
     RoutingRule,
     TaskComplexity,
 )
-from .router import Router
-from .routing_engine import RoutingEngine
-from .supported_models import get_default_intent_rules, get_default_supported_models
+from .core.router import Router
+from .core.routing_engine import RoutingEngine
+from .core.supported_models import get_default_intent_rules, get_default_supported_models
 
 __version__ = "0.1.0"
 
