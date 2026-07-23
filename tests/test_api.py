@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from ignis_router.api import create_app
+from ignis_router.api.api import create_app
 from ignis_router.exceptions import ModelNotAvailableError, RoutingError
 
 

@@ -3,7 +3,7 @@
 from typing import Any
 
 from ignis_router import Intent, TaskComplexity
-from ignis_router.intent_detector import (
+from ignis_router.detection.intent_detector import (
     HybridIntentDetector,
     MLIntentDetector,
     RuleBasedIntentDetector,

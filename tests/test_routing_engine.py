@@ -16,7 +16,7 @@ from ignis_router import (
     TaskComplexity,
 )
 from ignis_router.config import RouterRegistry
-from ignis_router.routing_engine import RoutingEngine
+from ignis_router.core.routing_engine import RoutingEngine
 
 
 @pytest.fixture

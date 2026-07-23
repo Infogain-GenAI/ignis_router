@@ -4,7 +4,7 @@ import pytest
 
 from ignis_router import Intent, ModelCapability, ModelConfig, TaskComplexity
 from ignis_router.config import RouterRegistry
-from ignis_router.model_selector import ModelSelector
+from ignis_router.core.model_selector import ModelSelector
 from ignis_router.models import RoutingRule
 
 

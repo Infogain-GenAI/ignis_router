@@ -9,8 +9,8 @@ from typing import Any, Callable, Optional
 
 from .config import RouterConfig
 from .models import RoutingResult
-from .router import Router
-from .routing_decision import (
+from .core.router import Router
+from .db.routing_decision import (
     build_routing_decision,
     build_routing_decision_from_result,
     log_routing_decision_to_db,

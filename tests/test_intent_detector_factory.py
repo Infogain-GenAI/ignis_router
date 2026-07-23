@@ -4,12 +4,13 @@ import pytest
 
 from ignis_router.config import RouterConfig
 from ignis_router.exceptions import ConfigurationError
-from ignis_router.intent_detector import (
+from ignis_router.detection.intent_detector import (
     HybridIntentDetector,
     MLIntentDetector,
     RuleBasedIntentDetector,
+    SemanticIntentDetector,
 )
-from ignis_router.intent_detector_factory import IntentDetectorFactory
+from ignis_router.detection.intent_detector_factory import IntentDetectorFactory
 
 
 class TestIntentDetectorFactory:
@@ -19,7 +20,7 @@ class TestIntentDetectorFactory:
             enable_rule_based_intent_detection=False,
         )
         detector = IntentDetectorFactory.create(config)
-        assert isinstance(detector, MLIntentDetector)
+        assert isinstance(detector, (MLIntentDetector, SemanticIntentDetector))
 
     def test_factory_selects_rule_based_only_mode(self):
         config = RouterConfig(

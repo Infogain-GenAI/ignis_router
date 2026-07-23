@@ -87,7 +87,7 @@ pip install git+https://github.com/Infogain-GenAI/ignis_router.git@sakshi_dev_1
 ```
 
 This auto-installs all dependencies including:
-- `llmrouter-lib` (open-source ML routers from GitHub)
+- `llmrouter-lib` (open-source ML routers from PyPI)
 - `torch`, `transformers` (for Longformer embeddings)
 - `openai`, `fastapi`, `pydantic`, `psycopg`, etc.
 
@@ -490,7 +490,7 @@ User query
 
 ## ML Routers
 
-The package uses [LLMRouter](https://github.com/ulab-uiuc/LLMRouter) (open-source) for ML-based model prediction. Four router types are supported:
+The package uses [LLMRouter](https://github.com/ulab-uiuc/LLMRouter) (open-source) for ML-based model prediction. Install it from PyPI as `llmrouter-lib`. Four router types are supported:
 
 | Router | Type | Model File | Algorithm |
 |--------|------|-----------|-----------|
@@ -1002,7 +1002,7 @@ result = ask("Write a sorting algorithm in Python")
 
 ### What happens internally:
 
-1. `pip install` downloads ignis_router + llmrouter-lib (from GitHub) + all deps
+1. `pip install` downloads ignis_router + llmrouter-lib (from PyPI) + all deps
 2. First run downloads Longformer model from HuggingFace (~560 MB, cached permanently)
 3. ML router (SVM/KNN/Graph/MF) predicts best LLM model
 4. If API key missing for predicted model → switches to available provider
