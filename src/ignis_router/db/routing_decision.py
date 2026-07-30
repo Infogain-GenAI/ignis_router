@@ -77,9 +77,15 @@ def log_routing_decision_to_db(
     response_content: str = "",
 ) -> None:
     """
-    Save routing decision to PostgreSQL. Silently skips if DB is unavailable.
+    Save routing decision to PostgreSQL. Logs warning if DB is unavailable.
+    Respects the DB_LOGGING_ENABLED feature flag.
     Used by both decorators and API endpoints.
     """
+    # Check feature flag — skip if DB logging is disabled
+    import os
+    if os.getenv("DB_LOGGING_ENABLED", "true").lower() in ("false", "0", "no"):
+        return
+
     try:
         from .persistence import PostgresRouteLogger
         db = PostgresRouteLogger()
@@ -90,8 +96,12 @@ def log_routing_decision_to_db(
             strategy=strategy,
             response_content=response_content,
         )
-    except Exception:
-        pass  # DB unavailable — don't break the response
+    except Exception as exc:
+        from ..logging import get_logger
+        get_logger(__name__).debug(
+            "DB logging unavailable — skipping persistence: %s", exc,
+            extra={"event": "db_log_skipped", "error_type": type(exc).__name__},
+        )
 
 
 def _get_rule_based_pick(intent: str) -> str:

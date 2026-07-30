@@ -1,10 +1,10 @@
 """Routing engine that orchestrates intent detection and model selection."""
 
-import logging
 from typing import Optional
 
 from ..config import RouterConfig, RouterRegistry
 from ..exceptions import ModelNotAvailableError, RoutingError
+from ..logging import get_logger, request_logger, get_correlation_id
 from ..detection.intent_detector import BaseIntentDetector
 from .model_selector import ModelSelector
 from ..models import (
@@ -16,7 +16,7 @@ from ..models import (
     TaskComplexity,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RoutingEngine:
@@ -77,7 +77,22 @@ class RoutingEngine:
             RoutingError: If no suitable model can be found.
             ModelNotAvailableError: If no models are registered.
         """
+        import time as _time
+        _route_start = _time.perf_counter()
+
+        request_logger.log_request(
+            request.query,
+            source="routing_engine",
+            preferred_provider=request.preferred_provider or "",
+        )
+
         if not self._registry.get_enabled_models():
+            request_logger.log_failure(
+                request.query,
+                error_type="ModelNotAvailableError",
+                error_message="No models are registered or enabled.",
+                phase="routing",
+            )
             raise ModelNotAvailableError("No models are registered or enabled.")
 
         # Detect intent
@@ -146,6 +161,13 @@ class RoutingEngine:
                 )
                 default_model = self._resolve_default_fallback_model()
                 if default_model is None:
+                    request_logger.log_failure(
+                        request.query,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                        phase="model_selection",
+                        exception=exc,
+                    )
                     raise RoutingError("Routing selection failed and no fallback model is available.") from exc
 
                 fallbacks = self._build_fallback_models(
@@ -164,6 +186,14 @@ class RoutingEngine:
         if selected_model is None:
             default_model = self._resolve_default_fallback_model()
             if default_model is None:
+                request_logger.log_failure(
+                    request.query,
+                    error_type="RoutingError",
+                    error_message=f"No suitable model found for intent={intent.value}, complexity={complexity.value}",
+                    phase="model_selection",
+                    intent=intent.value,
+                    complexity=complexity.value,
+                )
                 raise RoutingError(
                     f"No suitable model found for intent={intent.value}, "
                     f"complexity={complexity.value}"
@@ -197,6 +227,20 @@ class RoutingEngine:
                 scoring_details["selection_mode"] = "default-fallback-low-confidence"
 
         reasoning = self._build_reasoning(intent, complexity, confidence, selected_model)
+
+        _route_elapsed = (_time.perf_counter() - _route_start) * 1000
+        request_logger.log_routing_decision(
+            request.query,
+            selected_model=selected_model.model_name,
+            provider=selected_model.provider,
+            intent=intent.value,
+            complexity=complexity.value,
+            confidence=confidence,
+            latency_ms=_route_elapsed,
+            selection_mode=scoring_details.get("selection_mode", ""),
+            ml_predicted=scoring_details.get("model_hint", ""),
+            strategy=self._config.routing_strategy,
+        )
 
         return RoutingResult(
             selected_model=selected_model,

@@ -26,6 +26,10 @@
 18. [Using in Another App](#using-in-another-app)
 19. [Running Tests](#running-tests)
 20. [Troubleshooting](#troubleshooting)
+21. [Logging & Observability](#logging--observability)
+22. [Metrics & Evaluation](#metrics--evaluation)
+23. [Intent Detection (Detailed)](#intent-detection-detailed)
+24. [Feature Flags](#feature-flags)
 
 ---
 
@@ -45,23 +49,26 @@ Ignis Router is a Python **package** (and optional REST API) that:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ Ignis Router (ignis_router package)                     │
-│                                                         │
-│  Intent Detection ─► Rule Engine ─► Scoring Engine      │
-│         │                                               │
-│         ▼                                               │
-│  ┌─────────────────────────────────────────────┐        │
-│  │ LLMRouter Package (open-source)             │        │
-│  │  • KNN / SVM / Graph / MF routing           │        │
-│  │  • Longformer embedding generation          │        │
-│  │  • Training pipeline (retrain capability)   │        │
-│  └─────────────────────────────────────────────┘        │
-│         │                                               │
-│         ▼                                               │
-│  Provider Integration (OpenAI, Anthropic, Gemini)       │
-│  Decorators / REST API / PostgreSQL Logging             │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ Ignis Router (ignis_router package)                         │
+│                                                             │
+│  Hybrid Intent Detection ─► Rule Engine ─► Scoring Engine   │
+│  (Semantic ML + Rule-Based)                                 │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ LLMRouter Package (open-source)             │            │
+│  │  • KNN / SVM / Graph / MF routing           │            │
+│  │  • Longformer embedding generation          │            │
+│  │  • Training pipeline (retrain capability)   │            │
+│  └─────────────────────────────────────────────┘            │
+│         │                                                   │
+│         ▼                                                   │
+│  Provider Integration (OpenAI, Anthropic, Gemini)           │
+│  Decorators / REST API / PostgreSQL Logging                 │
+│  Structured JSON Logging + Correlation IDs                  │
+│  Metrics & Evaluation Engine                                │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -111,57 +118,79 @@ pip install -e ".[dev]"
 ## Project Structure
 
 ```
-ignis_router/
+llm_router_accelerator/
 ├── .env.example                  # Sample environment config (copy to .env)
+├── .env                          # Your local config (not committed)
 ├── pyproject.toml                # Package metadata and dependencies
-├── configs/
-│   ├── balanced.yaml             # Balanced routing strategy weights
-│   ├── cost-first.yaml           # Cost-optimized strategy
-│   ├── quality-first.yaml        # Quality-optimized strategy
-│   ├── latency-first.yaml        # Latency-optimized strategy
-│   ├── postgres_schema.sql       # DB table schema
-│   └── ml_routers/               # ML router YAML configs
-│       ├── knnrouter.yaml
-│       ├── svmrouter.yaml
-│       ├── graphrouter.yaml
-│       └── mfrouter.yaml
-├── data/
-│   └── example_data/             # Training/routing data for ML routers
-│       ├── query_data/           # Query train/test data
-│       ├── routing_data/         # Routing labels + embeddings
-│       └── llm_candidates/       # LLM candidate metadata
-├── models/
-│   ├── knnrouter.pkl             # Legacy KNN model (intent detection)
-│   ├── knnrouter/knnrouter.pkl   # Trained KNN router model
-│   ├── svmrouter/svmrouter.pkl   # Trained SVM router model
-│   ├── graphrouter/graphrouter.pt # Trained Graph router model
-│   └── mfrouter/mfrouter.pt     # Trained MF router model
-├── scripts/
-│   └── train_all_routers.py      # Train/retrain ML router models
+├── user_guide.md                 # This guide
+├── README.md                     # Project overview
+├── docs/
+│   └── logging.md                # Logging & observability documentation
+├── logs/
+│   └── ignis_router.log          # JSON log output (auto-created)
 ├── examples/
 │   ├── basic_routing.py          # Simple routing example
 │   ├── ai_chat_app.py            # Interactive AI chat (route + LLM)
-│   └── route_with_db.py          # Routing with PostgreSQL logging
+│   ├── main_integration_example.py # Full integration example
+│   ├── route_with_db.py          # Routing with PostgreSQL logging
+│   └── streamlit_dashboard.py    # Streamlit metrics dashboard
 ├── src/ignis_router/             # Main package
 │   ├── __init__.py               # Package exports
-│   ├── decorators.py             # @route, @chat, @with_router decorators
-│   ├── router.py                 # Main Router class
-│   ├── routing_engine.py         # Orchestration engine
-│   ├── routing_decision.py       # Shared routing decision logic
-│   ├── intent_detector.py        # Rule-based + ML intent detection
-│   ├── intent_detector_factory.py # Detector strategy factory
-│   ├── model_selector.py         # Scoring and model selection
-│   ├── ml_router_adapter.py      # LLMRouter package integration adapter
-│   ├── llmrouter_integration.py  # ML inference, embeddings, training pipeline
-│   ├── llm_client.py             # LLM provider clients (OpenAI, Anthropic, Gemini)
-│   ├── persistence.py            # PostgreSQL logging
 │   ├── config.py                 # Configuration and registry
 │   ├── config_framework.py       # YAML strategy loader
-│   ├── models.py                 # Data models (Intent, ModelConfig, etc.)
-│   ├── supported_models.py       # Default model catalog + intent rules
+│   ├── decorators.py             # @route, @chat, @with_router decorators
 │   ├── exceptions.py             # Custom exceptions
-│   ├── api.py                    # FastAPI REST service
-│   └── run_api.py                # API server runner
+│   ├── logging.py                # Structured logging framework
+│   ├── models.py                 # Data models (Intent, ModelConfig, etc.)
+│   ├── api/
+│   │   ├── api.py                # FastAPI REST service
+│   │   ├── client.py             # SDK client (IgnisClient)
+│   │   └── run_api.py            # API server runner
+│   ├── configs/
+│   │   ├── balanced.yaml         # Balanced routing strategy weights
+│   │   ├── cost-first.yaml       # Cost-optimized strategy
+│   │   ├── quality-first.yaml    # Quality-optimized strategy
+│   │   ├── latency-first.yaml    # Latency-optimized strategy
+│   │   ├── postgres_schema.sql   # DB table schema
+│   │   └── ml_routers/           # ML router YAML configs
+│   │       ├── knnrouter.yaml
+│   │       ├── svmrouter.yaml
+│   │       ├── graphrouter.yaml
+│   │       └── mfrouter.yaml
+│   ├── core/
+│   │   ├── router.py             # Main Router class
+│   │   ├── routing_engine.py     # Orchestration engine
+│   │   ├── model_selector.py     # Scoring and model selection
+│   │   └── supported_models.py   # Default model catalog + intent rules
+│   ├── data/
+│   │   ├── intent_training_data.json  # Intent classifier training data
+│   │   └── example_data/         # Training/routing data for ML routers
+│   ├── db/
+│   │   ├── persistence.py        # PostgreSQL logging
+│   │   └── routing_decision.py   # Shared routing decision logic
+│   ├── detection/
+│   │   ├── intent_detector.py    # Rule-based + ML intent detection
+│   │   ├── intent_detector_factory.py # Detector strategy factory
+│   │   ├── semantic_intent_classifier.py # Sentence Transformer classifier
+│   │   └── train_intent_classifier.py   # Train the intent classifier
+│   ├── evaluation/
+│   │   ├── metrics.py            # Metrics computation engine
+│   │   ├── dashboard.py          # Dashboard data engine
+│   │   ├── collector.py          # Data collection utilities
+│   │   └── report.py             # Report generation
+│   ├── llm/
+│   │   └── llm_client.py        # LLM provider clients (OpenAI, Anthropic, Gemini)
+│   ├── ml/
+│   │   ├── ml_router_adapter.py  # LLMRouter package integration adapter
+│   │   └── llmrouter_integration.py # ML inference, embeddings, training
+│   ├── models/
+│   │   ├── intent_classifier.pkl # Semantic intent classifier model
+│   │   ├── knnrouter/knnrouter.pkl   # Trained KNN router model
+│   │   ├── svmrouter/svmrouter.pkl   # Trained SVM router model
+│   │   ├── graphrouter/graphrouter.pt # Trained Graph router model
+│   │   └── mfrouter/mfrouter.pt     # Trained MF router model
+│   └── scripts/
+│       └── train_all_routers.py  # Train/retrain ML router models
 └── tests/                        # Test suite (pytest)
 ```
 
@@ -192,6 +221,9 @@ ML_ROUTER_TYPE=svm
 # Routing strategy YAML
 ROUTER_YAML_CONFIG=configs/cost-first.yaml
 
+# API server port
+API_PORT=8080
+
 # LLM Provider API Keys
 OPENAI_API_KEY=sk-your-openai-key-here
 # ANTHROPIC_API_KEY=sk-ant-your-key-here
@@ -204,6 +236,12 @@ ROUTER_DB_NAME=llm_router
 ROUTER_DB_USER=postgres
 ROUTER_DB_PASSWORD=your_password
 ROUTER_DB_TABLE=routing_responses
+
+# Logging & Observability
+IGNIS_LOG_FILE=logs/ignis_router.log
+IGNIS_LOG_CONSOLE=false
+IGNIS_LOG_LEVEL=INFO
+IGNIS_LOG_FORMAT=json
 ```
 
 ---
@@ -347,14 +385,14 @@ def safe_ask(query, response):
 ## Run the REST API
 
 ```powershell
-python -m ignis_router.run_api
+python -m ignis_router.api.run_api
 ```
 
 Server starts at `http://127.0.0.1:8080` (~45 seconds to load ML models).
 
 Set custom port:
 ```powershell
-$env:API_PORT=9000; python -m ignis_router.run_api
+$env:API_PORT=9000; python -m ignis_router.api.run_api
 ```
 
 ---
@@ -367,6 +405,12 @@ $env:API_PORT=9000; python -m ignis_router.run_api
 | GET | `/docs` | Swagger UI (interactive API docs) |
 | POST | `/route` | Route a query (pick best model, no LLM call) |
 | POST | `/chat` | Route + call LLM + return AI response + routing decision |
+| GET | `/metrics?days=N` | Routing metrics for last N days (accuracy, cost, latency) |
+| GET | `/metrics/summary?days=N` | Text summary of metrics |
+| GET | `/metrics/models?days=N` | Model usage distribution |
+| GET | `/dashboard?days=N` | Full dashboard data (metrics + routing log + feature flags) |
+| GET | `/features` | Get all feature flags with current on/off status |
+| PUT | `/features/{key}?enabled=true/false` | Toggle a routing feature on/off at runtime |
 
 ### POST /route
 
@@ -459,6 +503,11 @@ psql -U postgres -d llm_router -f configs/postgres_schema.sql
 User query
     │
     ▼
+┌── Structured Logging (request_received) ──┐
+│   Correlation ID assigned                  │
+└────────────────────────────────────────────┘
+    │
+    ▼
 ┌── ML Intent Detector (confidence check) ──┐
 │   confidence < threshold?                  │
 │   Yes → Fall back to Rule-Based Detector   │
@@ -482,7 +531,12 @@ User query
     ▼
 ┌── Call LLM + Return Response ────────────┐
 │   AI response + full routing decision     │
-│   Saved to PostgreSQL automatically       │
+└────────────────────────────────────────────┘
+    │
+    ▼
+┌── Persistence ───────────────────────────┐
+│   • JSON log (logs/ignis_router.log)      │
+│   • PostgreSQL (routing_responses table)  │
 └────────────────────────────────────────────┘
 ```
 
@@ -882,13 +936,13 @@ To retrain models (e.g. when adding new LLMs):
 
 ```powershell
 # Train all routers
-python scripts/train_all_routers.py
+python -m ignis_router.scripts.train_all_routers
 
 # Train specific router
-python scripts/train_all_routers.py svm
-python scripts/train_all_routers.py knn
-python scripts/train_all_routers.py graph
-python scripts/train_all_routers.py mf
+python -m ignis_router.scripts.train_all_routers svm
+python -m ignis_router.scripts.train_all_routers knn
+python -m ignis_router.scripts.train_all_routers graph
+python -m ignis_router.scripts.train_all_routers mf
 ```
 
 ### Via code (programmatic)
@@ -954,6 +1008,8 @@ Set via `ROUTER_YAML_CONFIG` in `.env`:
 | `ML_MODEL_PATH` | `models/knnrouter.pkl` | Path to legacy ML intent model |
 | `ROUTER_YAML_CONFIG` | *(none)* | Strategy YAML (e.g. `configs/cost-first.yaml`) |
 | `API_PORT` | `8080` | API server port |
+| `IGNIS_ROUTER_API_PORT` | `8080` | API server port (alternate name) |
+| `IGNIS_ROUTER_API_RELOAD` | `false` | Enable hot-reload for development |
 | `OPENAI_API_KEY` | *(none)* | OpenAI API key |
 | `ANTHROPIC_API_KEY` | *(none)* | Anthropic API key |
 | `GOOGLE_API_KEY` | *(none)* | Google Gemini API key |
@@ -963,6 +1019,14 @@ Set via `ROUTER_YAML_CONFIG` in `.env`:
 | `ROUTER_DB_USER` | `postgres` | PostgreSQL user |
 | `ROUTER_DB_PASSWORD` | *(none)* | PostgreSQL password |
 | `ROUTER_DB_TABLE` | `routing_responses` | PostgreSQL table |
+| `IGNIS_LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+| `IGNIS_LOG_FORMAT` | `json` | Log format (`json` or `text`) |
+| `IGNIS_LOG_FILE` | *(none)* | File path for log output (e.g. `logs/ignis_router.log`) |
+| `IGNIS_LOG_CONSOLE` | `true` | Print logs to terminal (`true` or `false`) |
+| `IGNIS_LOG_CORRELATION_HEADER` | `X-Correlation-ID` | HTTP header for correlation ID propagation |
+| `HF_HUB_OFFLINE` | *(none)* | Set to `1` to block HuggingFace downloads |
+| `DB_LOGGING_ENABLED` | `true` | Enable/disable PostgreSQL persistence of routing decisions |
+| `ENABLE_LOGGING` | `true` | Enable/disable structured observability logging |
 
 ---
 
@@ -981,6 +1045,8 @@ Create a `.env` file in your app's root:
 OPENAI_API_KEY=sk-your-key-here
 ML_ROUTER_TYPE=svm
 ENABLE_ML_MODEL_HINT_ROUTING=true
+IGNIS_LOG_FILE=logs/ignis_router.log
+IGNIS_LOG_CONSOLE=false
 ```
 
 ### Step 3: Use decorators
@@ -1007,7 +1073,8 @@ result = ask("Write a sorting algorithm in Python")
 3. ML router (SVM/KNN/Graph/MF) predicts best LLM model
 4. If API key missing for predicted model → switches to available provider
 5. Calls LLM → returns response
-6. Saves routing decision to PostgreSQL (if configured)
+6. Logs structured JSON to `logs/ignis_router.log` (request + routing decision)
+7. Saves routing decision to PostgreSQL (if configured)
 
 ---
 
@@ -1030,13 +1097,368 @@ python -m pytest tests/test_api.py   # Specific file
 | `POST /chat` returns 503 | LLM API key missing or invalid | Set `OPENAI_API_KEY` in `.env` |
 | ML confidence always below threshold | ML intent detector is uncertain | Lower `ML_CONFIDENCE_THRESHOLD` or rely on rule-based |
 | `HTTP Error 504` from HuggingFace | HuggingFace server down | Wait and retry, or set `HF_HUB_OFFLINE=1` in `.env` |
-| `File does not exist: .pkl` | ML model file missing | Run `python scripts/train_all_routers.py` |
+| `File does not exist: .pkl` | ML model file missing | Run `python -m ignis_router.scripts.train_all_routers` |
 | Every query returns same model | `ENABLE_ML_MODEL_HINT_ROUTING=true` overrides rules | Set to `false` for intent-rule routing |
 | `ConfigurationError: both detectors disabled` | Both ML and rule-based set to `false` | Enable at least one |
 | PostgreSQL connection failed | Wrong credentials in `.env` | Check `ROUTER_DB_*` values |
 | Slow startup (~45s) | Loading torch + Longformer models | Normal on first run; cached after |
+| JSON logs cluttering terminal | `IGNIS_LOG_CONSOLE` defaults to `true` | Set `IGNIS_LOG_CONSOLE=false` in `.env` |
+| No log file created | `IGNIS_LOG_FILE` not set | Add `IGNIS_LOG_FILE=logs/ignis_router.log` to `.env` |
+| `ModuleNotFoundError: ignis_router.run_api` | Outdated module path | Use `python -m ignis_router.api.run_api` |
 
 ---
+---
+
+## Logging & Observability
+
+Ignis Router includes a built-in structured logging framework for monitoring and auditing routing behavior.
+
+### Setup
+
+Add to your `.env`:
+```env
+IGNIS_LOG_FILE=logs/ignis_router.log
+IGNIS_LOG_CONSOLE=false
+###IGNIS_LOG_LEVEL=INFO
+###GNIS_LOG_FORMAT=json
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IGNIS_LOG_FILE` | *(none)* | Path to write JSON logs (created automatically) |
+| `IGNIS_LOG_CONSOLE` | `true` | Print logs to stdout (`false` = file only) |
+| `IGNIS_LOG_LEVEL` | `INFO` | Minimum level: DEBUG, INFO, WARNING, ERROR |
+| `IGNIS_LOG_FORMAT` | `json` | Output format: `json` (machine-parseable) or `text` (human-readable) |
+
+### What Gets Logged
+
+Every routing call produces structured log events:
+
+| Event | Level | When |
+|-------|-------|------|
+| `request_received` | INFO | Query enters the routing engine |
+| `routing_decision` | INFO | Model selection completes (with model, intent, confidence, latency) |
+| `routing_failure` | ERROR | Routing fails — includes full traceback, crash file, line number, function |
+| `routing_fallback` | WARNING | Primary model unavailable, switched to fallback |
+| `unhandled_crash` | CRITICAL | Unhandled exception caught by global crash handler — full traceback |
+| `db_log_skipped` | DEBUG | PostgreSQL unavailable, DB persistence skipped |
+| `feature_flag_changed` | INFO | A feature flag was toggled via the API |
+
+### Crash Logging
+
+When errors occur, logs include the exact crash location:
+
+```json
+{
+  "level": "ERROR",
+  "event": "routing_failure",
+  "error_type": "KeyError",
+  "error_message": "'missing_key'",
+  "exception": {
+    "type": "KeyError",
+    "message": "'missing_key'",
+    "traceback": "Traceback (most recent call last):\n  File \"router.py\", line 183, in chat\n  ..."
+  },
+  "crash_location": {
+    "file": "src/ignis_router/core/router.py",
+    "line": 183,
+    "function": "chat"
+  },
+  "source": {
+    "file": "src/ignis_router/logging.py",
+    "line": 340,
+    "function": "log_failure"
+  }
+}
+```
+
+| Field | What it tells you |
+|-------|-------------------|
+| `exception.traceback` | Full call stack showing how the crash happened |
+| `crash_location.file` | Exact file where the crash occurred |
+| `crash_location.line` | Exact line number |
+| `crash_location.function` | Which function crashed |
+| `source` | Where the log statement was called from |
+
+Unhandled exceptions are also caught by a global `sys.excepthook` handler and logged at CRITICAL level with `event: "unhandled_crash"`.
+
+### JSON Log Output Example
+
+```json
+{"timestamp": "2026-07-24T05:40:48.19+00:00", "level": "INFO", "logger": "ignis_router.requests", "message": "Routing request received", "correlation_id": "cfd5595db1b749e5", "event": "request_received", "query_length": 25, "query_preview": "what are the imp of llms?", "source": "routing_engine"}
+{"timestamp": "2026-07-24T05:40:59.94+00:00", "level": "INFO", "logger": "ignis_router.requests", "message": "Routing decision completed", "correlation_id": "cfd5595db1b749e5", "event": "routing_decision", "selected_model": "qwen2.5-7b-instruct", "provider": "ml-prediction", "intent": "general_chat", "confidence": 0.6, "latency_ms": 11759.93, "selection_mode": "ml-model-hint", "strategy": "latency-first"}
+```
+
+### Correlation IDs
+
+Every request gets a unique trace ID that connects all log entries for that request.
+
+**API (automatic):** The middleware reads `X-Correlation-ID` from request headers (or generates one) and returns it in the response header.
+
+**Decorators (automatic):** `@route()` and `@chat()` auto-generate a correlation ID per call.
+
+**Manual usage:**
+```python
+from ignis_router import correlation_context
+
+with correlation_context("my-trace-id") as cid:
+    result = router.route("Write code")
+    # All logs inside this block share the same correlation_id
+```
+
+### Querying Logs
+
+```powershell
+# All routing decisions
+Get-Content logs/ignis_router.log | ConvertFrom-Json | Where-Object { $_.event -eq "routing_decision" }
+
+# Average latency
+Get-Content logs/ignis_router.log | ConvertFrom-Json | Where-Object { $_.event -eq "routing_decision" } | Measure-Object -Property latency_ms -Average
+
+# Model distribution
+Get-Content logs/ignis_router.log | ConvertFrom-Json | Where-Object { $_.event -eq "routing_decision" } | Group-Object selected_model | Select-Object Name, Count
+
+# All failures
+Get-Content logs/ignis_router.log | ConvertFrom-Json | Where-Object { $_.event -eq "routing_failure" }
+
+# Trace a specific request
+Get-Content logs/ignis_router.log | ConvertFrom-Json | Where-Object { $_.correlation_id -eq "cfd5595db1b749e5" }
+```
+
+### Programmatic Setup
+
+```python
+from ignis_router import setup_logging, get_logger, correlation_context
+
+# Configure at app startup (reads .env automatically)
+setup_logging(level="INFO", format="json", log_file="logs/ignis_router.log")
+
+# Custom logger for your code
+logger = get_logger("my_app")
+logger.info("Application started")
+```
+
+### Integration with Log Aggregators
+
+The JSON format is natively compatible with:
+- **ELK Stack / OpenSearch** — Filebeat reads the log file directly
+- **Datadog** — Agent auto-parses JSON logs
+- **CloudWatch / Azure Monitor** — Capture stdout from containers
+- **Splunk** — JSON sourcetype, no parsing rules needed
+
+---
+
+## Metrics & Evaluation
+
+Ignis Router computes routing performance metrics from the PostgreSQL database.
+
+### Via API
+
+```powershell
+# Start API server
+python -m ignis_router.run_api
+
+# Get metrics for last 7 days
+Invoke-RestMethod -Uri "http://localhost:8080/metrics?days=7" | ConvertTo-Json -Depth 5
+```
+
+### Via Python
+
+```python
+from ignis_router.evaluation.metrics import MetricsEngine
+
+engine = MetricsEngine()
+report = engine.compute(days=7)
+print(report.summary())
+```
+
+### Available Metrics
+
+| Category | Metric | Formula |
+|----------|--------|---------|
+| **Accuracy** | Routing Accuracy | % queries where ML prediction matched final model |
+| | Intent Accuracy | % queries where intent detection was consistent |
+| | Top-2 Accuracy | % where correct model was in top 2 choices |
+| **Cost** | Cost Savings | % saved vs always using premium model (gpt-4.1) |
+| | Avg Cost/Query | Average cost based on tokens × model pricing |
+| | Unnecessary Premium | % simple queries sent to expensive models |
+| **Latency** | Avg Routing Latency | Mean routing decision time (ms) |
+| | P95 Latency | 95th percentile routing time (ms) |
+| **Distribution** | Model Distribution | Count of queries per model |
+| | Intent Distribution | Count of queries per detected intent |
+| | Daily Counts | Queries per day |
+
+### Example Output
+
+```
+============================================================
+  ROUTING METRICS REPORT
+  Period: 2026-07-17 00:00 → 2026-07-24 05:40
+  Total Queries: 142
+============================================================
+
+  ACCURACY
+  Routing Accuracy:              91.2%
+  Intent Accuracy:               87.5%
+  Top-2 Accuracy:                96.3%
+
+  COST
+  Cost Savings vs Premium:       62.4%
+  Avg Cost Per Query:            $0.003200
+  Unnecessary Premium Usage:     8.1%
+
+  LATENCY
+  Avg Routing Latency:           15.3 ms
+  P95 Latency:                   45.7 ms
+
+  MODEL DISTRIBUTION
+    gpt-4.1                          67 (47.2%)
+    gpt-4o-mini                      42 (29.6%)
+    claude-3-5-sonnet                33 (23.2%)
+============================================================
+```
+
+### Prerequisites
+
+Metrics require PostgreSQL with routing decisions stored (automatic when DB is configured in `.env`).
+
+---
+
+## Intent Detection (Detailed)
+
+### How It Works
+
+Ignis Router uses a **Hybrid Intent Detection** system with two independent ML systems:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. INTENT DETECTION (What type of task?)                    │
+│                                                             │
+│    SemanticIntentDetector (Sentence Transformer + LogReg)   │
+│         │                                                   │
+│         ├─ confidence >= threshold → use ML intent          │
+│         └─ confidence < threshold  → RuleBasedDetector      │
+│                                     (regex keyword match)   │
+│                                                             │
+│    Output: intent (code_generation, summarization, etc.)    │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. MODEL SELECTION (Which LLM to use?)                      │
+│                                                             │
+│    ML Router (KNN/SVM/Graph/MF from LLMRouter)              │
+│         │                                                   │
+│         ├─ Predicts best model name (e.g. qwen2.5-7b)      │
+│         └─ If API key missing → fallback to available LLM   │
+│                                                             │
+│    Output: final model (gpt-4.1, claude-3-5-sonnet, etc.)  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Three Intent Detectors
+
+| Detector | How | Accuracy | Speed |
+|----------|-----|----------|-------|
+| **SemanticIntentDetector** | Sentence Transformer embeddings → Logistic Regression | High | ~8s (first call, loads model) |
+| **RuleBasedIntentDetector** | Regex patterns match keywords (e.g. "write", "code" → code_generation) | Medium | <1ms |
+| **HybridIntentDetector** | Tries Semantic first → falls back to Rule-Based if confidence < threshold | Best of both | Varies |
+
+### Supported Intents
+
+| Intent | Example Queries | Default Model |
+|--------|----------------|---------------|
+| `code_generation` | "Write Python code", "Create an API" | claude-3-5-sonnet |
+| `summarization` | "Summarize this article", "TLDR" | gpt-4.1 |
+| `reasoning` | "Explain why", "Compare X and Y" | gpt-4.1 |
+| `creative_writing` | "Write a poem", "Compose a story" | claude-3-5-sonnet |
+| `data_analysis` | "Analyze this dataset", "Show trends" | gpt-4.1 |
+| `translation` | "Translate to Spanish" | gpt-4o-mini |
+| `classification` | "Classify this text", "Detect sentiment" | gpt-4o-mini |
+| `extraction` | "Extract entities", "Parse this JSON" | gpt-4o-mini |
+| `general_chat` | "What is a computer?", "Hello" | *(scored by weights)* |
+
+### Configuration
+
+```env
+# Both enabled = Hybrid (recommended)
+ENABLE_ML_INTENT_DETECTION=true
+ENABLE_RULE_BASED_INTENT_DETECTION=true
+
+# Threshold for ML → rule-based fallback
+ML_CONFIDENCE_THRESHOLD=0.50
+```
+
+### What Happens in Practice (from logs)
+
+```
+Query: "what are the imp of llms?"
+
+1. SemanticIntentDetector → confidence = 0.212 (too low)
+2. Falls back to RuleBasedIntentDetector → intent = general_chat
+3. ML Router (SVM) → predicts model = qwen2.5-7b-instruct
+4. API key check → no key for qwen2.5 → switches to gpt-4.1 (openai)
+5. Calls OpenAI → returns response
+```
+
+---
+
+## Feature Flags
+
+Ignis Router supports runtime feature toggles — turn routing features on/off without restarting the server or changing code.
+
+### Available Toggles
+
+| Dropdown Name | What It Controls | Default |
+|--------------|------------------|---------|
+| `ml_based_routing` | ML router (KNN/SVM/Graph/MF) predicts which LLM model to use | Depends on `.env` |
+| `rule_based_routing` | Regex keyword patterns and intent rules select the model | Depends on `.env` |
+| `hybrid_routing` | ML tries first, falls back to rules if confidence is low | Depends on `.env` |
+
+### How to Toggle
+
+**Via API (instant, no restart):**
+```bash
+# Disable ML routing
+PUT /features/ml_based_routing?enabled=false
+
+# Enable rule-based routing
+PUT /features/rule_based_routing?enabled=true
+
+# View all flags
+GET /features
+```
+
+**Via `.env` (permanent, needs restart):**
+```env
+ENABLE_ML_MODEL_HINT_ROUTING=true
+ENABLE_RULE_BASED_INTENT_DETECTION=true
+ENABLE_ML_INTENT_DETECTION=true
+```
+
+**Via Python:**
+```python
+from ignis_router import Router, FeatureFlags
+
+router = Router()
+flags = FeatureFlags.from_config(router.config)
+
+flags.set("enable_ml_model_hint_routing", False)
+flags.toggle("enable_ml_intent_detection")
+print(flags.to_dict()["summary"])
+```
+
+### Priority
+
+| Priority | Source | Persistence |
+|----------|--------|-------------|
+| 1st (highest) | API toggle (`PUT /features/...`) | Until server restarts |
+| 2nd | `.env` file | Permanent (read on startup) |
+
+### Dashboard Integration
+
+`GET /dashboard` includes a `feature_flags` field with all toggle states. The `PUT /features/{key}` endpoint is used to toggle them. The Swagger UI at `/docs` provides dropdowns for both the feature key and the enabled value.
+
 ---
 
 ## Roadmap & Next Steps
