@@ -53,6 +53,16 @@ from .models import (
 from .core.router import Router
 from .core.routing_engine import RoutingEngine
 from .core.supported_models import get_default_intent_rules, get_default_supported_models
+from .feature_flags import FeatureFlags
+from .logging import (
+    correlation_context,
+    get_correlation_id,
+    get_logger,
+    request_logger,
+    RequestLogger,
+    setup_logging,
+    set_correlation_id,
+)
 
 __version__ = "0.1.0"
 
@@ -119,4 +129,14 @@ __all__ = [
     "EmbeddingEngine",
     "TrainingPipeline",
     "check_llm_key_available",
+    # Logging & Observability
+    "setup_logging",
+    "get_logger",
+    "get_correlation_id",
+    "set_correlation_id",
+    "correlation_context",
+    "request_logger",
+    "RequestLogger",
+    # Feature Flags
+    "FeatureFlags",
 ]

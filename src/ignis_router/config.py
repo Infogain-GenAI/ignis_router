@@ -151,6 +151,20 @@ class RouterConfig(BaseSettings):
         },
         description="Alias map from ML-predicted model labels to registered model IDs.",
     )
+    db_logging_enabled: bool = Field(
+        default=True,
+        description="Enable automatic persistence of routing decisions to PostgreSQL",
+        validation_alias=AliasChoices(
+            "DB_LOGGING_ENABLED", "IGNIS_ROUTER_DB_LOGGING_ENABLED"
+        ),
+    )
+    enable_logging: bool = Field(
+        default=True,
+        description="Enable structured observability logging (JSON log file + console)",
+        validation_alias=AliasChoices(
+            "ENABLE_LOGGING", "IGNIS_ROUTER_ENABLE_LOGGING"
+        ),
+    )
 
     model_config = {
         "env_prefix": "IGNIS_ROUTER_",

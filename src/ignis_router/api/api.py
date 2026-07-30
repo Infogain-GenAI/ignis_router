@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,22 @@ from ..exceptions import ConfigurationError, ModelNotAvailableError, RoutingErro
 from ..db.persistence import PostgresRouteLogger
 from ..core.router import Router
 from ..db.routing_decision import build_routing_decision, log_routing_decision_to_db
+
+
+class FeatureKey(str, Enum):
+    """Available feature flags for the PUT /features/{key} dropdown."""
+
+    ml_based_routing = "ml_based_routing"
+    rule_based_routing = "rule_based_routing"
+    hybrid_routing = "hybrid_routing"
+
+
+# Map clean dropdown names to internal config keys
+_FEATURE_KEY_MAP = {
+    "ml_based_routing": "enable_ml_model_hint_routing",
+    "rule_based_routing": "enable_rule_based_intent_detection",
+    "hybrid_routing": "enable_ml_intent_detection",
+}
 from ..evaluation.metrics import MetricsEngine
 from ..evaluation.dashboard import DashboardEngine
 
@@ -117,12 +134,12 @@ def build_api_router() -> Router:
 def _try_init_db_logger() -> PostgresRouteLogger | None:
     """Attempt to connect to PostgreSQL. Returns None if DB is unavailable."""
     try:
-        logger = PostgresRouteLogger()
-        logger.ensure_table()
-        return logger
+        db_logger = PostgresRouteLogger()
+        db_logger.ensure_table()
+        return db_logger
     except Exception as exc:
-        import logging as _log
-        _log.getLogger(__name__).warning(
+        from ..logging import get_logger as _get_logger
+        _get_logger(__name__).warning(
             "PostgreSQL unavailable — DB logging disabled. %s", exc
         )
         return None
@@ -130,10 +147,26 @@ def _try_init_db_logger() -> PostgresRouteLogger | None:
 
 def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
     """Application factory used by uvicorn and tests."""
+    from ..logging import get_logger, request_logger, correlation_context, set_correlation_id
+    from ..feature_flags import FeatureFlags
+
     load_dotenv(_project_root() / ".env")
     app = FastAPI(title="Ignis Router API", version="0.1.0")
     app.state.router = router or build_api_router()
     app.state.db_logger = _try_init_db_logger() if enable_db else None
+    app.state.feature_flags = FeatureFlags.from_config(app.state.router.config)
+
+    _api_logger = get_logger(__name__)
+
+    @app.middleware("http")
+    async def correlation_id_middleware(request: Request, call_next):
+        """Inject correlation ID from header or generate one for each request."""
+        header_name = os.getenv("IGNIS_LOG_CORRELATION_HEADER", "X-Correlation-ID")
+        cid = request.headers.get(header_name)
+        with correlation_context(cid) as active_cid:
+            response = await call_next(request)
+            response.headers[header_name] = active_cid
+            return response
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -148,6 +181,7 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
 
     @app.exception_handler(ModelNotAvailableError)
     async def handle_model_unavailable(request: Request, exc: ModelNotAvailableError) -> JSONResponse:
+        _api_logger.error("Model not available: %s", exc, extra={"event": "api_error", "error_type": "model_not_available"})
         return JSONResponse(
             status_code=503,
             content=ErrorResponse(
@@ -157,6 +191,7 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
         )
 
     async def handle_routing_error(request: Request, exc: Exception) -> JSONResponse:
+        _api_logger.warning("Routing error: %s", exc, extra={"event": "api_error", "error_type": "routing_error"})
         return JSONResponse(
             status_code=400,
             content=ErrorResponse(
@@ -170,6 +205,7 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        _api_logger.exception("Unexpected error", extra={"event": "api_error", "error_type": "internal_error"})
         return JSONResponse(
             status_code=500,
             content=ErrorResponse(
@@ -316,24 +352,58 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
         page_size: int = Query(default=20, ge=1, le=100, description="Routing log page size"),
     ) -> dict[str, Any]:
         """
-        Full dashboard payload with KPIs, charts, and routing log.
+        Full dashboard payload with KPIs, charts, routing log, and feature flags.
         Designed for frontend consumption.
         """
         try:
             engine = DashboardEngine()
-            return engine.generate(
+            dashboard_data = engine.generate(
                 days=days,
                 strategy=strategy,
                 intent=intent,
                 page=page,
                 page_size=page_size,
             )
+            # Include feature flags so the dashboard can show toggles
+            dashboard_data["feature_flags"] = app.state.feature_flags.to_dict()
+            return dashboard_data
         except Exception as exc:
             return JSONResponse(
                 status_code=500,
                 content=ErrorResponse(
                     error="dashboard_error",
                     message=f"Failed to generate dashboard: {exc}",
+                ).model_dump(),
+            )
+
+    @app.get("/features")
+    async def get_features() -> dict[str, Any]:
+        """Get all feature flags with their current status, grouped by category."""
+        return app.state.feature_flags.to_dict()
+
+    @app.put("/features/{key}")
+    async def update_feature(key: FeatureKey, enabled: bool = Query(..., description="Set feature to true or false")) -> dict[str, Any]:
+        """Toggle a feature flag at runtime without restarting the server."""
+        config_key = _FEATURE_KEY_MAP[key.value]
+        try:
+            app.state.feature_flags.set(config_key, enabled)
+            flag = app.state.feature_flags.get(config_key)
+            _api_logger.info(
+                "Feature flag updated: %s=%s", key.value, enabled,
+                extra={"event": "feature_flag_changed", "flag": key.value, "enabled": enabled},
+            )
+            return {
+                "key": key.value,
+                "name": flag.name,
+                "enabled": flag.enabled,
+                "message": f"Feature '{flag.name}' {'enabled' if enabled else 'disabled'}",
+            }
+        except KeyError as exc:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    error="unknown_feature",
+                    message=str(exc),
                 ).model_dump(),
             )
 
