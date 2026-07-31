@@ -1,10 +1,7 @@
 # Ignis Router — User Guide
 
-> **Intelligent LLM routing for Python.**
-> Selects the best language model for every query using ML routers, rule-based intent detection, weighted scoring, and automatic provider fallback.
-
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+> Complete implementation guide for integrating Ignis Router into your application.
+> For a quick overview, see [README.md](README.md).
 
 ---
 
@@ -13,21 +10,29 @@
 1. [Installation](#installation)
 2. [Configuration](#configuration)
 3. [Quick Start](#quick-start)
-4. [Decorators](#decorators)
-5. [REST API](#rest-api)
-6. [SDK Client](#sdk-client)
-7. [Streamlit Dashboard](#streamlit-dashboard)
-8. [ML Routers](#ml-routers)
-9. [Logging](#logging)
-10. [Environment Variables](#environment-variables)
-11. [Troubleshooting](#troubleshooting)
+4. [Integration Examples](#integration-examples)
+   - [FastAPI App](#example-1-fastapi-app-with-ignis-router)
+   - [Flask App](#example-2-flask-app)
+   - [Standalone Script](#example-3-standalone-script)
+   - [Interactive Chat](#example-4-interactive-ai-chat)
+5. [Decorators (Detailed)](#decorators-detailed)
+6. [REST API](#rest-api)
+7. [SDK Client](#sdk-client)
+8. [Streamlit Dashboard](#streamlit-dashboard)
+9. [ML Routers — Which One to Use](#ml-routers--which-one-to-use)
+10. [Intent Detection — How It Works](#intent-detection--how-it-works)
+11. [Feature Flags](#feature-flags)
+12. [PostgreSQL Logging](#postgresql-logging)
+13. [Logging & Observability](#logging--observability)
+14. [Environment Variables](#environment-variables)
+15. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Installation
 
 ```bash
-pip install git+https://github.com/Infogain-GenAI/ignis_router.git@sakshi_dev_1
+pip install git+https://github.com/Infogain-GenAI/ignis_router.git@dev
 ```
 
 Optional extras:
@@ -105,7 +110,7 @@ The table is created automatically on first use. No manual schema setup required
 
 ## Quick Start
 
-### Route a query (pick the best model)
+### Route a query (pick the best model — no LLM call)
 
 ```python
 from ignis_router import Router
@@ -120,7 +125,7 @@ print(result.detected_intent.value)       # code_generation
 print(result.confidence)                  # 0.85
 ```
 
-### Route + call the LLM
+### Route + call the LLM (get AI response)
 
 ```python
 from ignis_router import Router
@@ -138,7 +143,160 @@ print(response["provider"])    # openai
 
 ---
 
-## Decorators
+## Integration Examples
+
+### Example 1: FastAPI App with Ignis Router
+
+```python
+"""Add intelligent LLM routing to your existing FastAPI app."""
+from fastapi import FastAPI
+from dotenv import load_dotenv
+from ignis_router import Router
+
+load_dotenv()
+app = FastAPI()
+
+# Initialize router once at startup
+router = Router()
+router.register_supported_models()
+router.register_default_intent_rules()
+router.enable_llm_clients()
+
+
+@app.post("/ask")
+async def ask(query: str):
+    response = router.chat(query)
+    return {
+        "answer": response["content"],
+        "model_used": response["model"],
+        "provider": response["provider"],
+        "intent": response["routing"]["intent"],
+        "confidence": response["routing"]["confidence"],
+    }
+
+
+@app.post("/route-only")
+async def route_only(query: str):
+    result = router.route(query)
+    return {
+        "best_model": result.selected_model.model_name,
+        "intent": result.detected_intent.value,
+        "confidence": result.confidence,
+    }
+```
+
+### Example 2: Flask App
+
+```python
+"""Add intelligent LLM routing to your Flask app."""
+from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+from ignis_router import Router
+
+load_dotenv()
+app = Flask(__name__)
+
+router = Router()
+router.register_supported_models()
+router.register_default_intent_rules()
+router.enable_llm_clients()
+
+
+@app.route("/chat", methods=["POST"])
+def chat():
+    query = request.json["query"]
+    response = router.chat(query)
+    return jsonify({
+        "answer": response["content"],
+        "model": response["model"],
+        "routing": response.get("routing", {}),
+    })
+
+
+if __name__ == "__main__":
+    app.run(port=5000)
+```
+
+### Example 3: Standalone Script
+
+```python
+"""Use ignis_router in any Python script."""
+from dotenv import load_dotenv
+from ignis_router import chat
+
+load_dotenv()
+
+
+@chat(system_prompt="You are a senior Python developer")
+def code_assistant(query, response):
+    rd = response["routing_decision"]
+    print(f"--- Routing Decision ---")
+    print(f"ML Router Predicted:   {rd['ml_router_predicted']}")
+    print(f"Rule-Based Would Pick: {rd['rule_based_would_pick']}")
+    print(f"Final Model Used:      {rd['final_model']}")
+    if rd["note"]:
+        print(f"Note:                  {rd['note']}")
+    print(f"Intent:                {rd['intent']}")
+    print(f"Confidence:            {rd['confidence']:.2f}")
+    print(f"Tokens:                {rd['tokens']}")
+    print(f"\n--- Response ---")
+    print(response["content"])
+    return response["content"]
+
+
+# Each call automatically routes to the best model
+code_assistant("Write a REST API with authentication in FastAPI")
+code_assistant("What is the time complexity of quicksort?")
+code_assistant("Translate 'hello world' to French")
+```
+
+**Output:**
+```
+--- Routing Decision ---
+ML Router Predicted:   qwen2.5-7b-instruct
+Rule-Based Would Pick: claude-3-5-sonnet (intent rule: code_generation)
+Final Model Used:      gpt-4.1-2025-04-14 (openai)
+Note:                  API key not available for 'qwen2.5-7b-instruct', switched to available provider.
+Intent:                code_generation
+Confidence:            0.80
+Tokens:                670
+
+--- Response ---
+Here's a FastAPI REST API with JWT authentication...
+```
+
+### Example 4: Interactive AI Chat
+
+```python
+"""Interactive terminal chat with routing visibility."""
+from dotenv import load_dotenv
+from ignis_router import Router
+
+load_dotenv()
+
+router = Router()
+router.register_supported_models()
+router.register_default_intent_rules()
+router.enable_llm_clients()
+
+print("Type your query (or 'exit' to quit):\n")
+
+while True:
+    query = input("You: ").strip()
+    if query.lower() in ("exit", "quit"):
+        break
+
+    response = router.chat(query)
+    routing = response.get("routing", {})
+
+    print(f"\n  [Model: {response['model']} | Intent: {routing.get('intent')} | "
+          f"Confidence: {routing.get('confidence', 0):.2f}]")
+    print(f"\nAssistant: {response['content']}\n")
+```
+
+---
+
+## Decorators (Detailed)
 
 #### `@route()` — Route only
 
@@ -382,9 +540,181 @@ python -m ignis_router.scripts.train_all_routers        # All routers
 python -m ignis_router.scripts.train_all_routers svm    # Specific router
 ```
 
+Or programmatically:
+
+```python
+from ignis_router import TrainingPipeline
+
+pipeline = TrainingPipeline()
+pipeline.train("svm")      # Train one
+pipeline.train_all()       # Train all
+```
+
 ---
 
-## Logging
+## Intent Detection — How It Works
+
+Ignis Router uses a **hybrid** intent detection system with two layers:
+
+### Layer 1: Semantic ML Classifier (primary)
+
+- Uses Sentence Transformer embeddings + Logistic Regression
+- Trained on `data/intent_training_data.json`
+- If confidence ≥ `ML_CONFIDENCE_THRESHOLD` → uses ML result
+- If confidence < threshold → falls back to Layer 2
+
+### Layer 2: Rule-Based Detector (fallback)
+
+- Regex keyword matching (instant, < 1 ms)
+- Always available, no model loading required
+
+### Supported intents and their default models
+
+| Intent | Triggers on | Default Model |
+|--------|-------------|---------------|
+| `code_generation` | "write code", "create API", "implement", "function" | claude-3-5-sonnet |
+| `summarization` | "summarize", "TLDR", "sum up", "brief" | gpt-4.1 |
+| `reasoning` | "explain why", "compare", "analyze", "reason" | gpt-4.1 |
+| `creative_writing` | "write a poem", "compose", "story", "creative" | claude-3-5-sonnet |
+| `data_analysis` | "analyze data", "trends", "statistics", "chart" | gpt-4.1 |
+| `translation` | "translate", "in Spanish", "convert to French" | gpt-4o-mini |
+| `classification` | "classify", "categorize", "sentiment", "detect" | gpt-4o-mini |
+| `extraction` | "extract", "parse", "pull out", "entities" | gpt-4o-mini |
+| `general_chat` | anything else | *(scored by strategy weights)* |
+
+### Configuration
+
+```env
+# Both enabled = Hybrid mode (recommended)
+ENABLE_ML_INTENT_DETECTION=true
+ENABLE_RULE_BASED_INTENT_DETECTION=true
+
+# Lower this if ML is too uncertain for your queries
+ML_CONFIDENCE_THRESHOLD=0.50
+```
+
+### What happens in practice
+
+```
+Query: "Write a REST API with authentication"
+
+1. Semantic ML Classifier → confidence = 0.92 → intent = code_generation ✓
+2. ML Router (SVM) → predicts: qwen2.5-7b-instruct
+3. API key check → qwen2.5 not available → fallback to gpt-4.1 (OpenAI)
+4. Strategy scoring → gpt-4.1 wins with quality-first weights
+5. Call OpenAI → return response
+```
+
+```
+Query: "hello how are you"
+
+1. Semantic ML Classifier → confidence = 0.21 → too low!
+2. Falls back to Rule-Based → intent = general_chat
+3. ML Router → predicts: gemma-2-9b-it
+4. API key check → not available → fallback to gpt-4o-mini (OpenAI)
+5. Strategy scoring → gpt-4o-mini (cheapest for simple queries)
+6. Call OpenAI → return response
+```
+
+---
+
+## Feature Flags
+
+Toggle routing behavior at runtime without restarting the server or changing code.
+
+### Available flags
+
+| Flag | What it controls | Toggle via API |
+|------|------------------|----------------|
+| `ml_based_routing` | ML router model prediction (KNN/SVM/Graph/MF) | `PUT /features/ml_based_routing?enabled=false` |
+| `rule_based_routing` | Regex keyword rules for intent detection | `PUT /features/rule_based_routing?enabled=true` |
+| `hybrid_routing` | ML first + rule-based fallback | `PUT /features/hybrid_routing?enabled=true` |
+
+### Usage
+
+```bash
+# Disable ML (use only rule-based)
+curl -X PUT "http://localhost:8080/features/ml_based_routing?enabled=false"
+
+# View current flags
+curl http://localhost:8080/features
+```
+
+```python
+from ignis_router import Router, FeatureFlags
+
+router = Router()
+flags = FeatureFlags.from_config(router.config)
+flags.set("enable_ml_model_hint_routing", False)
+print(flags.to_dict())
+```
+
+---
+
+## PostgreSQL Logging
+
+Every routing decision is **automatically** persisted to PostgreSQL — both via decorators and the REST API.
+
+### Setup
+
+1. Create the database:
+```sql
+CREATE DATABASE llm_router;
+```
+
+2. Configure in `.env`:
+```env
+ROUTER_DB_HOST=localhost
+ROUTER_DB_PORT=5432
+ROUTER_DB_NAME=llm_router
+ROUTER_DB_USER=postgres
+ROUTER_DB_PASSWORD=your_password
+```
+
+> The table is created automatically on first use. No manual schema needed.
+
+### What gets stored
+
+| Column | Example Value |
+|--------|---------------|
+| `query_text` | "Write a Python sorting function" |
+| `ml_router_predicted` | "qwen2.5-7b-instruct" |
+| `rule_based_would_pick` | "claude-3-5-sonnet" |
+| `default_model_used` | "gpt-4.1-2025-04-14" |
+| `provider` | "openai" |
+| `note` | "API key not available, switched provider" |
+| `intent` | "code_generation" |
+| `complexity` | "low" |
+| `confidence` | 0.80 |
+| `tokens` | 135 |
+| `strategy` | "cost-first" |
+| `routing_latency_ms` | 15.3 |
+| `ml_won` | true |
+
+### Querying the data
+
+```sql
+-- Recent routing decisions
+SELECT query_text, default_model_used, intent, confidence
+FROM routing_responses
+ORDER BY created_at DESC
+LIMIT 10;
+
+-- Model usage distribution
+SELECT default_model_used, COUNT(*) as queries
+FROM routing_responses
+GROUP BY default_model_used
+ORDER BY queries DESC;
+
+-- Average confidence by intent
+SELECT intent, AVG(confidence) as avg_confidence, COUNT(*) as count
+FROM routing_responses
+GROUP BY intent;
+```
+
+---
+
+## Logging & Observability
 
 Structured JSON logs with correlation IDs.
 
