@@ -1,15 +1,15 @@
 include README.md
 include LICENSE
 include .env.example
-include .gitignore
 include MANIFEST.in
 include pyproject.toml
 recursive-include src/ignis_router *.py
 recursive-include src/ignis_router *.yaml
 recursive-include src/ignis_router *.sql
-recursive-include configs *.yaml
-recursive-include configs *.sql
-recursive-include data *
-recursive-include models *
+recursive-include src/ignis_router *.pkl
+recursive-include src/ignis_router *.pt
+recursive-include src/ignis_router *.json
 recursive-include examples *.py
-recursive-include tests *.py
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store
