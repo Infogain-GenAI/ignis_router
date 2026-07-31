@@ -85,6 +85,13 @@ packages = {find = {where = ["src"]}}
     "configs/*.yaml",
     "configs/*.sql",
     "configs/ml_routers/*.yaml",
+    "models/*.pkl",
+    "models/knnrouter/*",
+    "models/svmrouter/*",
+    "models/graphrouter/*",
+    "models/mfrouter/*",
+    "data/*.json",
+    "data/example_data/**/*",
 ]
 
 [tool.pytest.ini_options]
