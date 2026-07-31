@@ -10,7 +10,7 @@ import psycopg
 from dotenv import load_dotenv
 
 from ignis_router import Router, RouterConfig
-from ignis_router.persistence import PostgresRouteLogger
+from ignis_router.db.persistence import PostgresRouteLogger
 
 
 def _project_root() -> Path:

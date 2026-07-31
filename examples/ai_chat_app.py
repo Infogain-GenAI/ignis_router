@@ -36,7 +36,8 @@ logging.getLogger("torch").setLevel(logging.ERROR)
 from dotenv import load_dotenv
 
 from ignis_router import Router, RouterConfig
-from ignis_router.routing_decision import build_routing_decision
+from ignis_router.db.routing_decision import build_routing_decision, log_routing_decision_to_db
+from ignis_router.evaluation import LatencyCollector
 
 
 def _project_root() -> Path:
@@ -58,7 +59,7 @@ def build_router() -> Router:
     if yaml_config:
         config = RouterConfig.from_yaml(_resolve_from_root(yaml_config))
     else:
-        config = RouterConfig.from_yaml(str(_project_root() / "configs" / "quality-first.yaml"))
+        config = RouterConfig.from_yaml("quality-first.yaml")
 
     config.ml_model_path = _resolve_from_root(config.ml_model_path)
 
@@ -93,14 +94,24 @@ def main() -> None:
             break
 
         try:
-            result = router.chat(query)
+            with LatencyCollector() as lc:
+                result = router.chat(query)
+            elapsed = lc.elapsed
         except Exception as exc:
             print(f"\nError: {exc}\n")
             continue
 
         print(f"\n--- Routing Decision ---")
-        rd = build_routing_decision(result)
+        rd = build_routing_decision(result, elapsed=elapsed)
         ml_won = rd.get("ml_won", False)
+
+        # Save to database
+        log_routing_decision_to_db(
+            query=query,
+            routing_decision=rd,
+            strategy=router.config.routing_strategy,
+            response_content=result.get("content", ""),
+        )
 
         # Show ML prediction
         if rd.get("ml_router_predicted"):

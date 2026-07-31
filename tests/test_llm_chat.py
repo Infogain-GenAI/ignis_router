@@ -13,8 +13,8 @@ from ignis_router import (
     Router,
     RouterConfig,
 )
-from ignis_router.api import create_app
-from ignis_router.llm_client import (
+from ignis_router.api.api import create_app
+from ignis_router.llm.llm_client import (
     BaseLLMClient,
     LLMClientRegistry,
     LLMResponse,

@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 import functools
-import logging
 import time
 from typing import Any, Callable, Optional
 
 from .config import RouterConfig
+from .logging import get_logger, request_logger, correlation_context
 from .models import RoutingResult
-from .router import Router
-from .routing_decision import (
+from .core.router import Router
+from .db.routing_decision import (
     build_routing_decision,
     build_routing_decision_from_result,
     log_routing_decision_to_db,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Module-level shared router instance (lazy-initialized)
 _shared_router: Optional[Router] = None
@@ -85,23 +85,24 @@ def route(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(query: str, *args: Any, **kwargs: Any) -> Any:
-            r = router or get_shared_router()
-            start = time.perf_counter()
-            result = r.route(query)
-            elapsed = time.perf_counter() - start
+            with correlation_context() as cid:
+                r = router or get_shared_router()
+                start = time.perf_counter()
+                result = r.route(query)
+                elapsed = time.perf_counter() - start
 
-            routing_decision = build_routing_decision_from_result(result, elapsed)
+                routing_decision = build_routing_decision_from_result(result, elapsed)
 
-            if log:
-                logger.info(
-                    "Routed query to %s (intent=%s, confidence=%.2f, time=%.3fs)",
-                    result.selected_model.model_name,
-                    result.detected_intent.value,
-                    result.confidence,
-                    elapsed,
-                )
+                if log:
+                    logger.info(
+                        "Routed query to %s (intent=%s, confidence=%.2f, time=%.3fs)",
+                        result.selected_model.model_name,
+                        result.detected_intent.value,
+                        result.confidence,
+                        elapsed,
+                    )
 
-            return func(query, result, routing_decision, *args, **kwargs)
+                return func(query, result, routing_decision, *args, **kwargs)
 
         return wrapper
 
@@ -142,59 +143,67 @@ def chat(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(query: str, *args: Any, **kwargs: Any) -> Any:
-            r = router or get_shared_router()
-            start = time.perf_counter()
+            with correlation_context() as cid:
+                r = router or get_shared_router()
+                start = time.perf_counter()
 
-            try:
-                response = r.chat(
-                    query,
-                    system_prompt=system_prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
+                try:
+                    response = r.chat(
+                        query,
+                        system_prompt=system_prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                except RuntimeError as exc:
+                    request_logger.log_failure(
+                        query,
+                        error_type="RuntimeError",
+                        error_message=str(exc),
+                        phase="llm_execution",
+                        exception=exc,
+                    )
+                    logger.warning("LLM unavailable: %s. Returning routing-only result.", exc)
+                    result = r.route(query)
+                    response = {
+                        "content": f"[LLM unavailable] Routed to: {result.selected_model.model_name}",
+                        "model": result.selected_model.model_name,
+                        "provider": result.selected_model.provider,
+                        "usage": {},
+                        "finish_reason": "llm_unavailable",
+                        "fallback_used": False,
+                        "routing": {
+                            "detected_intent": result.detected_intent.value,
+                            "complexity": result.complexity.value,
+                            "confidence": result.confidence,
+                            "reasoning": result.reasoning,
+                            "originally_selected": result.selected_model.model_name,
+                            "selection_mode": result.scoring_details.get("selection_mode", ""),
+                            "ml_model_hint": result.scoring_details.get("model_hint", ""),
+                        },
+                    }
+
+                elapsed = time.perf_counter() - start
+
+                # Build routing decision using shared logic (same as API)
+                response["routing_decision"] = build_routing_decision(response, elapsed)
+
+                # Auto-save to PostgreSQL
+                log_routing_decision_to_db(
+                    query=query,
+                    routing_decision=response["routing_decision"],
+                    strategy=r.config.routing_strategy,
+                    response_content=response.get("content", ""),
                 )
-            except RuntimeError as exc:
-                logger.warning("LLM unavailable: %s. Returning routing-only result.", exc)
-                result = r.route(query)
-                response = {
-                    "content": f"[LLM unavailable] Routed to: {result.selected_model.model_name}",
-                    "model": result.selected_model.model_name,
-                    "provider": result.selected_model.provider,
-                    "usage": {},
-                    "finish_reason": "llm_unavailable",
-                    "fallback_used": False,
-                    "routing": {
-                        "detected_intent": result.detected_intent.value,
-                        "complexity": result.complexity.value,
-                        "confidence": result.confidence,
-                        "reasoning": result.reasoning,
-                        "originally_selected": result.selected_model.model_name,
-                        "selection_mode": result.scoring_details.get("selection_mode", ""),
-                        "ml_model_hint": result.scoring_details.get("model_hint", ""),
-                    },
-                }
 
-            elapsed = time.perf_counter() - start
+                if log:
+                    logger.info(
+                        "Chat completed: model=%s provider=%s time=%.3fs",
+                        response.get("model", "unknown"),
+                        response.get("provider", "unknown"),
+                        elapsed,
+                    )
 
-            # Build routing decision using shared logic (same as API)
-            response["routing_decision"] = build_routing_decision(response, elapsed)
-
-            # Auto-save to PostgreSQL
-            log_routing_decision_to_db(
-                query=query,
-                routing_decision=response["routing_decision"],
-                strategy=r.config.routing_strategy,
-                response_content=response.get("content", ""),
-            )
-
-            if log:
-                logger.info(
-                    "Chat completed: model=%s provider=%s time=%.3fs",
-                    response.get("model", "unknown"),
-                    response.get("provider", "unknown"),
-                    elapsed,
-                )
-
-            return func(query, response, *args, **kwargs)
+                return func(query, response, *args, **kwargs)
 
         return wrapper
 

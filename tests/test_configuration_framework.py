@@ -5,7 +5,7 @@ import pytest
 from ignis_router import ModelCapability, ModelConfig, RouterConfig
 from ignis_router.config import RouterRegistry
 from ignis_router.exceptions import ConfigurationError
-from ignis_router.model_selector import ModelSelector
+from ignis_router.core.model_selector import ModelSelector
 from ignis_router.models import Intent, TaskComplexity
 
 

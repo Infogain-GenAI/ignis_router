@@ -2,7 +2,7 @@
 
 from ignis_router import ModelConfig, Router
 from ignis_router.config import RouterRegistry
-from ignis_router.supported_models import get_default_supported_models
+from ignis_router.core.supported_models import get_default_supported_models
 
 
 class TestRegistryMetadata:
