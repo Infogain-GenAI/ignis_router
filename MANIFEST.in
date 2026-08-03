@@ -3,13 +3,19 @@ include LICENSE
 include .env.example
 include MANIFEST.in
 include pyproject.toml
-recursive-include src/ignis_router *.py
-recursive-include src/ignis_router *.yaml
-recursive-include src/ignis_router *.sql
-recursive-include src/ignis_router *.pkl
-recursive-include src/ignis_router *.pt
-recursive-include src/ignis_router *.json
-recursive-include examples *.py
+
+graft src
+graft examples
+
+recursive-include src *.py
+recursive-include src *.pkl
+recursive-include src *.pt
+recursive-include src *.json
+recursive-include src *.yaml
+recursive-include src *.yml
+recursive-include src *.sql
+
+global-exclude .env
 global-exclude *.pyc
 global-exclude __pycache__
 global-exclude .DS_Store
