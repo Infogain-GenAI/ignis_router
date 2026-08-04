@@ -15,11 +15,7 @@ from ..models import RoutingResult
 class PostgresSettings:
     """Connection settings for PostgreSQL."""
 
-    host: str = "localhost"
-    port: int = 5432
-    dbname: str = "llm_router"
-    user: str = "postgres"
-    password: str = "postgres"
+    conninfo: str = "postgresql://postgres:postgres@localhost:5432/llm_router"
     table: str = "routing_responses"
 
     @classmethod
@@ -27,11 +23,10 @@ class PostgresSettings:
         import os
 
         return cls(
-            host=os.getenv("ROUTER_DB_HOST", "localhost"),
-            port=int(os.getenv("ROUTER_DB_PORT", "5432")),
-            dbname=os.getenv("ROUTER_DB_NAME", "llm_router"),
-            user=os.getenv("ROUTER_DB_USER", "postgres"),
-            password=os.getenv("ROUTER_DB_PASSWORD", "postgres"),
+            conninfo=os.getenv(
+                "ROUTER_DATABASE_URL",
+                "postgresql://postgres:postgres@localhost:5432/llm_router",
+            ),
             table=os.getenv("ROUTER_DB_TABLE", "routing_responses"),
         )
 
@@ -43,13 +38,7 @@ class PostgresRouteLogger:
         self.settings = settings or PostgresSettings.from_env()
 
     def _connect(self):
-        return psycopg.connect(
-            host=self.settings.host,
-            port=self.settings.port,
-            dbname=self.settings.dbname,
-            user=self.settings.user,
-            password=self.settings.password,
-        )
+        return psycopg.connect(self.settings.conninfo)
 
     def ensure_table(self) -> None:
         """Create the routing responses table when missing."""

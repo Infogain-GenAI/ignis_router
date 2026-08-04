@@ -214,6 +214,10 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
             ).model_dump(),
         )
 
+    @app.get("/")
+    async def root() -> dict[str, str]:
+        return {"name": "Ignis Router API", "status": "ok", "docs": "/docs"}
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -241,6 +245,38 @@ def create_app(router: Router | None = None, enable_db: bool = True) -> FastAPI:
             strategy=strategy,
             confidence=round(result.confidence, 2),
         )
+
+    @app.get(
+        "/route",
+        response_model=RouteResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            500: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+    )
+    async def route_query_get(query: str = Query(..., min_length=1, description="Prompt text to route")) -> RouteResponse:
+        result = app.state.router.route(query)
+        strategy = app.state.router.config.routing_strategy
+        if app.state.db_logger:
+            try:
+                app.state.db_logger.log_response(query, result, strategy)
+            except Exception:
+                pass
+        return RouteResponse(
+            selected_model=result.selected_model.model_name,
+            strategy=strategy,
+            confidence=round(result.confidence, 2),
+        )
+
+    @app.get("/providers")
+    async def get_providers() -> dict[str, Any]:
+        """Return list of available LLM providers from registered models."""
+        providers = set()
+        for model in app.state.router.registry.get_all_models():
+            providers.add(model.provider)
+        return {"available_providers": sorted(providers)}
 
     @app.post(
         "/chat",

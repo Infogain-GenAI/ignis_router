@@ -40,13 +40,7 @@ class DashboardEngine:
         self._settings = settings or PostgresSettings.from_env()
 
     def _connect(self):
-        return psycopg.connect(
-            host=self._settings.host,
-            port=self._settings.port,
-            dbname=self._settings.dbname,
-            user=self._settings.user,
-            password=self._settings.password,
-        )
+        return psycopg.connect(self._settings.conninfo)
 
     def generate(
         self,
