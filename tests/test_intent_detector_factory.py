@@ -48,7 +48,18 @@ class TestIntentDetectorFactory:
 
 
 class TestConfigurationLoading:
-    def test_loads_detector_config_from_env_file(self, tmp_path):
+    def test_loads_detector_config_from_env_file(self, tmp_path, monkeypatch):
+        # Clear any env vars that could override the .env file values
+        for var in (
+            "ENABLE_ML_INTENT_DETECTION",
+            "ENABLE_RULE_BASED_INTENT_DETECTION",
+            "ML_CONFIDENCE_THRESHOLD",
+            "IGNIS_ROUTER_ENABLE_ML_INTENT_DETECTION",
+            "IGNIS_ROUTER_ENABLE_RULE_BASED_INTENT_DETECTION",
+            "IGNIS_ROUTER_ML_CONFIDENCE_THRESHOLD",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
         env_file = tmp_path / ".env"
         env_file.write_text(
             "ENABLE_ML_INTENT_DETECTION=true\n"

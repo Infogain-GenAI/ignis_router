@@ -65,7 +65,7 @@ def sample_models():
 @pytest.fixture
 def router(sample_models):
     """Create a router with sample models registered."""
-    r = Router()
+    r = Router(config=RouterConfig(enable_ml_model_hint_routing=False))
     for model in sample_models:
         r.register_model(model)
     return r
@@ -187,6 +187,7 @@ class TestRouterRules:
             config=RouterConfig(
                 enable_ml_intent_detection=False,
                 enable_rule_based_intent_detection=True,
+                enable_ml_model_hint_routing=False,
             )
         )
         for model in [
@@ -226,6 +227,7 @@ class TestRouterRules:
             config=RouterConfig(
                 enable_ml_intent_detection=False,
                 enable_rule_based_intent_detection=True,
+                enable_ml_model_hint_routing=False,
             )
         )
         default_router.register_supported_models()

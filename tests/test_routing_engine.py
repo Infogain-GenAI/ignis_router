@@ -289,6 +289,7 @@ class TestRoutingEngine:
         config = RouterConfig(
             default_model_id="fast-model",
             fallback_enabled=True,
+            enable_ml_model_hint_routing=False,
         )
         engine = RoutingEngine(config=config, registry=registry_with_models)
 
@@ -305,6 +306,7 @@ class TestRoutingEngine:
         config = RouterConfig(
             default_model_id="fast-model",
             fallback_enabled=False,
+            enable_ml_model_hint_routing=False,
         )
         engine = RoutingEngine(config=config, registry=registry_with_models)
 

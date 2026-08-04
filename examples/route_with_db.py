@@ -52,8 +52,8 @@ def main() -> None:
         settings = db_logger.settings
         print("PostgreSQL connection failed.")
         print(
-            "Check ROUTER_DB_HOST/PORT/NAME/USER/PASSWORD in .env. "
-            f"Current target: {settings.user}@{settings.host}:{settings.port}/{settings.dbname}"
+            "Check ROUTER_DATABASE_URL in .env. "
+            f"Current target: {settings.conninfo}"
         )
         raise
 
