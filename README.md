@@ -166,11 +166,7 @@ ENABLE_RULE_BASED_INTENT_DETECTION=true
 
 ```env
 # Optional: Other settings (defaults usually fine)
-ROUTER_DB_HOST=localhost
-ROUTER_DB_PORT=5432
-ROUTER_DB_NAME=llm_router
-ROUTER_DB_USER=postgres
-ROUTER_DB_PASSWORD=your_password
+ROUTER_DATABASE_URL=postgresql://postgres:your_password@localhost:5432/llm_router
 IGNIS_LOG_FILE=logs/ignis_router.log
 ```
 
@@ -537,21 +533,24 @@ Starts at `http://127.0.0.1:8080`. Swagger UI at `/docs`.
 # Custom port
 $env:API_PORT=9000; python -m ignis_router.api.run_api
 
-# With DB password
-$env:ROUTER_DB_PASSWORD = 'your_password'; python -m ignis_router.api.run_api
+# With DB connection string
+$env:ROUTER_DATABASE_URL = 'postgresql://postgres:your_password@localhost:5432/llm_router'; python -m ignis_router.api.run_api
 ```
 
 ### Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/` | API info (name, status, docs) |
 | `GET` | `/health` | Health check |
 | `GET` | `/docs` | Swagger UI |
+| `GET` | `/route?query=...` | Route a query via GET parameter |
 | `POST` | `/route` | Route a query → selected model, strategy, confidence |
 | `POST` | `/chat` | Route + call LLM → AI response with routing decision |
 | `GET` | `/metrics?days=N` | Routing metrics for last N days |
 | `GET` | `/metrics/summary?days=N` | Text summary |
 | `GET` | `/metrics/models?days=N` | Model distribution |
+| `GET` | `/providers` | List available LLM providers |
 | `GET` | `/dashboard?days=N` | Full dashboard data |
 | `GET` | `/features` | Feature flag states |
 | `PUT` | `/features/{key}?enabled=true` | Toggle a feature at runtime |
@@ -739,11 +738,7 @@ CREATE DATABASE llm_router;
 
 2. Configure in `.env`:
 ```env
-ROUTER_DB_HOST=localhost
-ROUTER_DB_PORT=5432
-ROUTER_DB_NAME=llm_router
-ROUTER_DB_USER=postgres
-ROUTER_DB_PASSWORD=your_password
+ROUTER_DATABASE_URL=postgresql://postgres:your_password@localhost:5432/llm_router
 ```
 
 > The table is created automatically on first use. No manual schema needed.
@@ -842,12 +837,7 @@ with correlation_context("my-trace-id") as cid:
 | `ENABLE_ML_INTENT_DETECTION` | `true` | Enable ML intent detection |
 | `ENABLE_RULE_BASED_INTENT_DETECTION` | `true` | Enable rule-based intent detection |
 | `API_PORT` | `8080` | API server port |
-| `ROUTER_DB_HOST` | `localhost` | PostgreSQL host |
-| `ROUTER_DB_PORT` | `5432` | PostgreSQL port |
-| `ROUTER_DB_NAME` | `llm_router` | Database name |
-| `ROUTER_DB_USER` | `postgres` | Database user |
-| `ROUTER_DB_PASSWORD` | `postgres` | Database password |
-| `ROUTER_DB_TABLE` | `routing_responses` | Table name |
+| `ROUTER_DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/llm_router` | PostgreSQL connection string |
 | `IGNIS_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `IGNIS_LOG_FORMAT` | `json` | `json` or `text` |
 | `IGNIS_LOG_FILE` | — | Log file path |
@@ -887,7 +877,7 @@ pip install ignis_router
 
 1. Ensure API is running: `python -m ignis_router.api.run_api`
 2. Ensure PostgreSQL is running and accessible
-3. Set `$env:ROUTER_DB_PASSWORD` before starting API
+3. Check `ROUTER_DATABASE_URL` in `.env`
 4. Run some queries first to generate data
 
 ### ML Router Issues
