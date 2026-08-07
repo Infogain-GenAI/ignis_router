@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import psycopg
+from psycopg import sql
 
 from ..models import RoutingResult
 
@@ -42,8 +43,9 @@ class PostgresRouteLogger:
 
     def ensure_table(self) -> None:
         """Create the routing responses table when missing."""
-        sql = f"""
-        CREATE TABLE IF NOT EXISTS {self.settings.table} (
+        table_id = sql.Identifier(self.settings.table)
+        create_sql = sql.SQL("""
+        CREATE TABLE IF NOT EXISTS {} (
             id BIGSERIAL PRIMARY KEY,
             query_text TEXT NOT NULL,
             ml_router_predicted TEXT,
@@ -62,34 +64,35 @@ class PostgresRouteLogger:
             response_json JSONB NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-        """
+        """).format(table_id)
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql)
+                cur.execute(create_sql)
                 # Add columns if table already exists but is missing new fields
                 for col, dtype in [
                     ("routing_latency_ms", "DOUBLE PRECISION DEFAULT 0"),
                     ("cost_estimate", "DOUBLE PRECISION DEFAULT 0"),
                     ("ml_won", "BOOLEAN DEFAULT FALSE"),
                 ]:
-                    cur.execute(f"""
+                    alter_sql = sql.SQL("""
                         DO $$ BEGIN
-                            ALTER TABLE {self.settings.table} ADD COLUMN {col} {dtype};
+                            ALTER TABLE {} ADD COLUMN {} {};
                         EXCEPTION WHEN duplicate_column THEN NULL;
                         END $$;
-                    """)
+                    """).format(table_id, sql.Identifier(col), sql.SQL(dtype))
+                    cur.execute(alter_sql)
             conn.commit()
 
     def log_response(self, query: str, result: RoutingResult, strategy: str) -> None:
         """Persist one routing response row (legacy format)."""
         payload = json.loads(result.model_dump_json())
-        insert_sql = f"""
-        INSERT INTO {self.settings.table}
+        insert_sql = sql.SQL("""
+        INSERT INTO {}
             (query_text, default_model_used, provider, intent, complexity,
              confidence, strategy, response_json)
         VALUES
             (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-        """
+        """).format(sql.Identifier(self.settings.table))
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -115,15 +118,15 @@ class PostgresRouteLogger:
         response_content: str = "",
     ) -> None:
         """Persist a full routing decision with ML/rule-based/default model info."""
-        insert_sql = f"""
-        INSERT INTO {self.settings.table}
+        insert_sql = sql.SQL("""
+        INSERT INTO {}
             (query_text, ml_router_predicted, rule_based_would_pick,
              default_model_used, provider, note, intent, complexity,
              confidence, tokens, routing_latency_ms, cost_estimate, ml_won,
              strategy, response_json)
         VALUES
             (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-        """
+        """).format(sql.Identifier(self.settings.table))
         # Extract provider from final_model string like "gpt-4.1 (openai)"
         final_model = routing_decision.get("final_model", "")
         provider = ""

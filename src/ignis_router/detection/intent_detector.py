@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import pickle
 import re
@@ -13,6 +14,35 @@ from typing import Any, Optional
 from ..models import Intent, TaskComplexity
 
 logger = logging.getLogger(__name__)
+
+# Allowed modules for restricted pickle deserialization of ML models
+_PICKLE_SAFE_MODULES = frozenset({
+    "sklearn", "sklearn.neighbors", "sklearn.svm", "sklearn.linear_model",
+    "sklearn.tree", "sklearn.ensemble", "sklearn.pipeline", "sklearn.preprocessing",
+    "sklearn.feature_extraction", "sklearn.feature_extraction.text",
+    "sklearn.utils", "sklearn.utils._bunch",
+    "numpy", "numpy.core", "numpy.core.multiarray", "numpy.core.numeric",
+    "numpy.dtypes", "numpy._core", "numpy._core.multiarray",
+    "scipy", "scipy.sparse", "scipy.sparse._csr", "scipy.sparse._csc",
+    "builtins", "collections", "copy_reg", "copyreg",
+})
+
+
+class _RestrictedUnpickler(pickle.Unpickler):
+    """Unpickler that only allows known-safe ML model classes."""
+
+    def find_class(self, module: str, name: str) -> Any:
+        top_level = module.split(".")[0]
+        if module in _PICKLE_SAFE_MODULES or top_level in {"sklearn", "numpy", "scipy"}:
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"Blocked unpickling of {module}.{name} — not in allowlist"
+        )
+
+
+def _restricted_unpickle(file_obj: io.BufferedIOBase) -> Any:
+    """Deserialize a pickle file using only allowed classes."""
+    return _RestrictedUnpickler(file_obj).load()
 
 
 # Keyword patterns for intent detection
@@ -375,7 +405,7 @@ class MLIntentDetector(BaseIntentDetector):
                 return None
 
             with path.open("rb") as file_obj:
-                return pickle.load(file_obj)
+                return _restricted_unpickle(file_obj)
         except Exception as exc:
             logger.warning("Failed to load ML model from %s: %s", model_path, exc)
             return None
