@@ -271,7 +271,7 @@ class Router:
 
             import logging
             logging.getLogger(__name__).warning(
-                "API key not available for '%s'. Switching to '%s' (%s).",
+                "Provider '%s' unavailable. Switching to '%s' (%s).",
                 provider,
                 fallback_model.model_name,
                 fallback_model.provider,
